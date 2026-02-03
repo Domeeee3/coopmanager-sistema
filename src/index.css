@@ -1,0 +1,211 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==================== BASE STYLES ==================== */
+@layer base {
+  * {
+    @apply border-slate-200 dark:border-slate-700;
+  }
+
+  body {
+    @apply bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Scrollbar Styles */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-slate-100 dark:bg-slate-800;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 dark:bg-slate-600 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400 dark:bg-slate-500;
+  }
+
+  /* Selection */
+  ::selection {
+    @apply bg-primary-200 text-primary-900 dark:bg-primary-900 dark:text-primary-100;
+  }
+
+  /* Focus visible */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900;
+  }
+}
+
+/* ==================== COMPONENT STYLES ==================== */
+@layer components {
+  /* Glassmorphism utility */
+  .glass {
+    @apply bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl;
+  }
+
+  /* Card hover effect */
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+  }
+
+  /* Input focus ring */
+  .input-focus {
+    @apply focus:ring-2 focus:ring-primary-200 dark:focus:ring-primary-900/20;
+  }
+
+  /* Button transitions */
+  .btn-transition {
+    @apply transition-all duration-200 ease-in-out;
+  }
+
+  /* Badge dot animation */
+  .badge-dot {
+    @apply animate-pulse;
+  }
+}
+
+/* ==================== UTILITY STYLES ==================== */
+@layer utilities {
+  /* Hide scrollbar but keep functionality */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Text gradient */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-600 to-primary-400;
+  }
+
+  /* Smooth scrolling */
+  .smooth-scroll {
+    scroll-behavior: smooth;
+  }
+
+  /* Animation delays */
+  .animation-delay-100 {
+    animation-delay: 100ms;
+  }
+  
+  .animation-delay-200 {
+    animation-delay: 200ms;
+  }
+  
+  .animation-delay-300 {
+    animation-delay: 300ms;
+  }
+  
+  .animation-delay-400 {
+    animation-delay: 400ms;
+  }
+  
+  .animation-delay-500 {
+    animation-delay: 500ms;
+  }
+}
+
+/* ==================== ANIMATIONS ==================== */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Animation classes */
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
+.animate-slide-down {
+  animation: slide-down 0.3s ease-out;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-in-out;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out;
+}
+
+/* Stagger animations for lists */
+.stagger-animation > * {
+  animation: slide-up 0.3s ease-out backwards;
+}
+
+.stagger-animation > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-animation > *:nth-child(2) { animation-delay: 100ms; }
+.stagger-animation > *:nth-child(3) { animation-delay: 200ms; }
+.stagger-animation > *:nth-child(4) { animation-delay: 300ms; }
+.stagger-animation > *:nth-child(5) { animation-delay: 400ms; }
+.stagger-animation > *:nth-child(6) { animation-delay: 500ms; }
+.stagger-animation > *:nth-child(7) { animation-delay: 600ms; }
+.stagger-animation > *:nth-child(8) { animation-delay: 700ms; }
+
+/* ==================== DARK MODE SPECIFIC ==================== */
+@layer base {
+  .dark {
+    color-scheme: dark;
+  }
+}
+
+/* ==================== PRINT STYLES ==================== */
+@media print {
+  body {
+    @apply bg-white text-black;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-break {
+    page-break-before: always;
+  }
+}
