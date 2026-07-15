@@ -28,6 +28,7 @@ export interface Member {
   totalContributions: number;      // Total de aportes históricos
   currentBalance: number;          // Balance actual (aportes - retiros)
   notes?: string;
+  profilePhoto?: string;           // Nombre del archivo local de foto de perfil
   createdAt: string;
   updatedAt: string;
 }
@@ -37,6 +38,7 @@ export interface MemberFormData {
   phone: string;
   joinDate: string;
   notes?: string;
+  profilePhoto?: string;
 }
 
 // ==================== DEVOLUCIONES POR RETIRO ====================
@@ -157,6 +159,7 @@ export interface Expense {
   date: string;
   receipt?: string;                // Referencia a comprobante
   notes?: string;
+  profilePhoto?: string;           // Nombre del archivo local de foto de perfil
   createdAt: string;
 }
 

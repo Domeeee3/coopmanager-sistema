@@ -1,17 +1,23 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  Button,
+  Input,
+  Label,
+  ListBox,
+  Modal,
+  Select,
+  TextArea,
+  TextField,
+  useOverlayState,
+} from '@heroui/react';
 import { useApp } from '@/core/store/AppContext';
-import { Card, CardContent } from '@/shared/ui/card';
-import { Button } from '@/shared/ui/button';
-import { Input } from '@/shared/ui/input';
-import { Textarea } from '@/shared/ui/textarea';
-import { Label } from '@/shared/ui/label';
-import { FormModal, ConfirmModal } from '@/shared/components/custom-modal';
 import { DataTable } from '@/shared/components/data-table';
-import { formatCurrency } from '@/core/lib/formatters';
+import { DatePicker } from "@/shared/ui/date-picker";
+import { StatCard } from '@/shared/components/StatCard';
 import { useMemberForm } from './hooks/useMemberForm';
 import { getMemberBaseColumns, getUnifiedActionsColumn } from './columns';
-import { User, Phone, Plus, Users, UserMinus, PiggyBank, Search, Filter } from 'lucide-react';
-import { DatePicker } from '@/shared/ui/date-picker';
+import { MemberPhotoField } from './MemberPhotoField';
+import { User, Phone, Plus, Users, UserMinus, PiggyBank } from 'lucide-react';
 import { Member } from '@/core/types';
 
 type StatusFilter = 'all' | 'active' | 'inactive';
@@ -22,9 +28,24 @@ export function MembersTab() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
-  // Confirmación para inactivar
   const [showInactivateConfirm, setShowInactivateConfirm] = useState(false);
   const [memberToInactivate, setMemberToInactivate] = useState<Member | null>(null);
+
+  const memberFormModal = useOverlayState({
+    isOpen: form.showForm,
+    onOpenChange: (isOpen) => {
+      if (!isOpen) form.closeForm();
+    },
+  });
+  const inactivateModal = useOverlayState({
+    isOpen: showInactivateConfirm,
+    onOpenChange: (isOpen) => {
+      if (!isOpen) {
+        setShowInactivateConfirm(false);
+        setMemberToInactivate(null);
+      }
+    },
+  });
 
   const handleInactivateRequest = useCallback((member: Member) => {
     setMemberToInactivate(member);
@@ -39,7 +60,6 @@ export function MembersTab() {
     }
   }, [memberToInactivate, form.markInactive]);
 
-  // Columnas unificadas
   const baseColumns = useMemo(
     () => getMemberBaseColumns({ contributions, refunds, currencyCode: config.currencyCode }),
     [contributions, refunds, config.currencyCode]
@@ -51,22 +71,18 @@ export function MembersTab() {
       getUnifiedActionsColumn({
         onEdit: form.openEdit,
         onInactivate: handleInactivateRequest,
-        onDelete: form.openDelete,
+        onRestore: form.restoreMember,
       }),
     ],
-    [baseColumns, form.openEdit, handleInactivateRequest, form.openDelete]
+    [baseColumns, form.openEdit, handleInactivateRequest, form.restoreMember]
   );
 
-  // Conteos
   const activeCount = useMemo(() => members.filter(m => m.status === 'active').length, [members]);
   const inactiveCount = useMemo(() => members.filter(m => m.status === 'inactive').length, [members]);
 
-  // Filtro combinado: status + búsqueda
   const filteredMembers = useMemo(() => {
     return members.filter(m => {
-      // Status filter
       if (statusFilter !== 'all' && m.status !== statusFilter) return false;
-      // Search filter
       if (search) {
         const q = search.toLowerCase();
         return m.name.toLowerCase().includes(q) || m.phone.includes(search);
@@ -84,171 +100,163 @@ export function MembersTab() {
   return (
     <>
       <div className="space-y-6">
-        {/* Estadísticas */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-lg bg-muted">
-                  <Users className="w-5 h-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Socios Activos</p>
-                  <p className="text-2xl font-bold text-foreground">{activeCount}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-lg bg-muted">
-                  <UserMinus className="w-5 h-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Socios Retirados</p>
-                  <p className="text-2xl font-bold text-foreground">{inactiveCount}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-lg bg-muted">
-                  <PiggyBank className="w-5 h-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Socios</p>
-                  <p className="text-2xl font-bold text-foreground">{members.length}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCard
+            label="Socios activos"
+            value={activeCount}
+            icon={Users}
+            tone="primary"
+          />
+          <StatCard
+            label="Socios retirados"
+            value={inactiveCount}
+            icon={UserMinus}
+            tone="warning"
+          />
+          <StatCard
+            label="Total de socios"
+            value={members.length}
+            icon={PiggyBank}
+            tone="success"
+          />
         </div>
 
-        {/* Toolbar: filtros + búsqueda + botón nuevo */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          {/* Status filter pills */}
-          <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
-            {filterButtons.map((f) => (
-              <button
-                key={f.value}
-                onClick={() => setStatusFilter(f.value)}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  statusFilter === f.value
-                    ? 'bg-black text-white dark:bg-white dark:text-black'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {f.label}
-                <span className="ml-1.5 text-xs opacity-70">({f.count})</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="flex-1" />
-
-          <Button size="sm" onClick={form.openCreate}>
-            <Plus className="w-4 h-4 mr-2" />
-            Nuevo Socio
-          </Button>
-        </div>
-
-        {/* Tabla unificada */}
         <DataTable
           data={filteredMembers}
           columns={columns}
-          keyExtractor={(m) => m.id}
+          keyExtractor={(member) => member.id}
           searchValue={search}
           onSearchChange={setSearch}
           searchPlaceholder="Buscar por nombre o teléfono..."
+          toolbar={(
+            <>
+              <Select
+                className="w-full sm:w-52"
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value as StatusFilter)}
+                aria-label="Filtrar socios por estado"
+              >
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {filterButtons.map((filter) => (
+                      <ListBox.Item key={filter.value} id={filter.value} textValue={filter.label}>
+                        {filter.label} ({filter.count})
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+              <Button className="sm:ml-auto" onPress={form.openCreate}>
+                <Plus className="size-4" />
+                Nuevo socio
+              </Button>
+            </>
+          )}
           emptyMessage={
             statusFilter === 'active'
               ? 'No hay socios activos'
               : statusFilter === 'inactive'
-              ? 'No hay socios retirados'
-              : 'No hay socios registrados'
+                ? 'No hay socios retirados'
+                : 'No hay socios registrados'
           }
         />
       </div>
 
-      {/* Modal de formulario */}
-      <FormModal
-        isOpen={form.showForm}
-        onClose={form.closeForm}
-        onSubmit={form.submit}
-        title={form.selected ? 'Editar Socio' : 'Nuevo Socio'}
-        submitText={form.selected ? 'Guardar Cambios' : 'Crear Socio'}
-      >
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>Nombre completo *</Label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                value={form.formData.name}
-                onChange={(e) => form.setFormData({ ...form.formData, name: e.target.value })}
-                placeholder="Ingrese el nombre completo"
-                className="pl-9"
-              />
-            </div>
-          </div>
+      <Modal state={memberFormModal}>
+        <Modal.Backdrop>
+          <Modal.Container size="md" scroll="inside">
+            <Modal.Dialog>
+              <form onSubmit={(event) => { event.preventDefault(); void form.submit(); }}>
+                <Modal.Header>
+                  <Modal.Heading>{form.selected ? 'Editar socio' : 'Nuevo socio'}</Modal.Heading>
+                  <Modal.CloseTrigger aria-label="Cerrar formulario de socio" />
+                </Modal.Header>
+                <Modal.Body className="space-y-4">
+                  <MemberPhotoField
+                    name={form.formData.name}
+                    photo={form.formData.profilePhoto}
+                    previewDataUrl={form.photoDataUrl}
+                    onSelect={form.setPhotoDataUrl}
+                    onRemove={form.clearProfilePhoto}
+                  />
 
-          <div className="space-y-2">
-            <Label>Teléfono</Label>
-            <div className="relative">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                value={form.formData.phone}
-                onChange={(e) => form.setFormData({ ...form.formData, phone: e.target.value })}
-                placeholder="555-123-4567"
-                className="pl-9"
-              />
-            </div>
-          </div>
+                  <TextField fullWidth>
+                    <Label>Nombre completo <span className="text-destructive" aria-hidden="true">*</span></Label>
+                    <div className="relative">
+                      <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        className="pl-9"
+                        value={form.formData.name}
+                        onChange={(event) => form.setFormData({ ...form.formData, name: event.target.value })}
+                        placeholder="María Fernanda López"
+                      />
+                    </div>
+                  </TextField>
 
-          <div className="space-y-2">
-            <Label>Fecha de ingreso</Label>
-            <DatePicker
-              value={form.formData.joinDate}
-              onChange={(value) => form.setFormData({ ...form.formData, joinDate: value })}
-            />
-          </div>
+                  <TextField fullWidth>
+                    <Label>Teléfono</Label>
+                    <div className="relative">
+                      <Phone className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        className="pl-9"
+                        value={form.formData.phone}
+                        onChange={(event) => form.setFormData({ ...form.formData, phone: event.target.value })}
+                        placeholder="0987654321"
+                      />
+                    </div>
+                  </TextField>
 
-          <div className="space-y-2">
-            <Label>Notas</Label>
-            <Textarea
-              value={form.formData.notes}
-              onChange={(e) => form.setFormData({ ...form.formData, notes: e.target.value })}
-              placeholder="Notas adicionales sobre el socio..."
-              rows={3}
-            />
-          </div>
-        </div>
-      </FormModal>
+                  <DatePicker
+                    label="Fecha de ingreso"
+                    value={form.formData.joinDate}
+                    onChange={(value) => form.setFormData({ ...form.formData, joinDate: value })}
+                  />
 
-      {/* Confirmación de eliminación */}
-      <ConfirmModal
-        isOpen={form.showDelete}
-        onClose={form.closeDelete}
-        onConfirm={form.confirmDelete}
-        title="Confirmar eliminación"
-        message={`¿Estás seguro de eliminar a "${form.selected?.name ?? ''}"? Esta acción no se puede deshacer.`}
-        confirmText="Eliminar"
-        variant="danger"
-      />
+                  <TextField fullWidth>
+                    <Label>Notas</Label>
+                    <TextArea
+                      value={form.formData.notes}
+                      onChange={(event) => form.setFormData({ ...form.formData, notes: event.target.value })}
+                      placeholder="Ej.: Tesorera de la cooperativa."
+                      rows={3}
+                    />
+                  </TextField>
+                </Modal.Body>
+                <Modal.Footer>
+                  <Button type="button" variant="outline" onPress={form.closeForm}>Cancelar</Button>
+                  <Button type="submit">{form.selected ? 'Guardar cambios' : 'Crear socio'}</Button>
+                </Modal.Footer>
+              </form>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
 
-      {/* Confirmación de inactivar/retirar */}
-      <ConfirmModal
-        isOpen={showInactivateConfirm}
-        onClose={() => { setShowInactivateConfirm(false); setMemberToInactivate(null); }}
-        onConfirm={confirmInactivate}
-        title="Confirmar retiro de socio"
-        message={`¿Estás seguro de marcar a "${memberToInactivate?.name ?? ''}" como retirado?`}
-        confirmText="Retirar Socio"
-        variant="warning"
-      />
+
+      <Modal state={inactivateModal}>
+        <Modal.Backdrop>
+          <Modal.Container size="sm">
+            <Modal.Dialog>
+              <Modal.Header>
+                <Modal.Heading>Confirmar retiro de socio</Modal.Heading>
+                <Modal.CloseTrigger aria-label="Cerrar confirmación" />
+              </Modal.Header>
+              <Modal.Body>
+                <p>¿Estás seguro de marcar a &quot;{memberToInactivate?.name ?? ''}&quot; como retirado?</p>
+              </Modal.Body>
+              <Modal.Footer>
+                <Button variant="outline" onPress={() => { setShowInactivateConfirm(false); setMemberToInactivate(null); }}>Cancelar</Button>
+                <Button variant="primary" onPress={confirmInactivate}>Retirar socio</Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
     </>
   );
 }

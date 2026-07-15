@@ -6,13 +6,13 @@ import { calculateFrenchAmortization } from '../../hooks/useFinance';
 export function createLoanActions(
   helpers: ActionHelpers,
   deps: {
-    addLoanRef: { current: ((data: LoanFormData) => Loan) | null };
+    addLoanRef: { current: ((data: LoanFormData, options?: { notify?: boolean }) => Loan) | null };
     updateMember: (id: string, data: any) => void;
   }
 ) {
   const { dispatch, getState, showToast, logActivity, addTransaction } = helpers;
 
-  const addLoan = (data: LoanFormData): Loan => {
+  const addLoan = (data: LoanFormData, options: { notify?: boolean } = {}): Loan => {
     const state = getState();
     const member = state.members.find(m => m.id === data.memberId);
 
@@ -61,7 +61,7 @@ export function createLoanActions(
     addTransaction('loan_approval', -Number(data.amount), `Desembolso de préstamo a ${member?.name}`, loan.id);
 
     logActivity('loan_add', `Préstamo aprobado: ${member?.name} - ${state.config.currencySymbol}${data.amount}`, { loan }, loan.id);
-    showToast('success', 'Préstamo aprobado', data.retentionPaid
+    if (options.notify !== false) showToast('success', 'Préstamo aprobado', data.retentionPaid
       ? `Préstamo de ${state.config.currencySymbol}${data.amount} desembolsado. Retención cobrada: ${state.config.currencySymbol}${retentionAmount}`
       : `Préstamo de ${state.config.currencySymbol}${data.amount} creado. Pendiente pago de retención: ${state.config.currencySymbol}${retentionAmount}`);
     return loan;
@@ -265,7 +265,7 @@ export function createLoanActions(
       termMonths: newTermMonths,
       startDate: new Date().toISOString().split('T')[0],
       notes: `Refinanciación del préstamo ${oldLoan.id}`,
-    });
+    }, { notify: false });
 
     updateLoan(newLoan.id, { refinancedFromId: loanId });
     showToast('success', 'Préstamo refinanciado', `Nuevo préstamo creado con ${newTermMonths} cuotas.`);

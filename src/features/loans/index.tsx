@@ -1,42 +1,35 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '@/core/store/AppContext';
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/ui/card';
-import { Button } from '@/shared/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/ui/table';
-import { Input } from '@/shared/ui/input';
-import { Label } from '@/shared/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/shared/ui/select';
+import { AlertDialog, Button, Chip, Card, Checkbox, Input, Label, ListBox, ProgressBar, Select, Table, TextArea, TextField } from '@heroui/react';
 import { FormModal } from '@/shared/components/custom-modal';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from '@/shared/ui/dialog';
-import { StatusBadge } from '@/shared/components/status-badge';
-import { Badge } from '@/shared/ui/badge';
-import { Progress } from '@/shared/ui/progress';
-import { Checkbox } from '@/shared/ui/checkbox';
+import { PageHeader } from '@/shared/components/PageHeader';
+import { tableStyles } from '@/shared/components/table-styles';
+import { DataTable, Column } from '@/shared/components/data-table';
+import { DatePicker } from "@/shared/ui/date-picker";
+import { StatCard } from '@/shared/components/StatCard';
+import { MemberAvatar } from '@/shared/components/MemberAvatar';
+import { TableActionButton } from '@/shared/components/TableActionButton';
 import { formatCurrency, formatDate, formatPercentage } from '@/core/lib/formatters';
 import { Loan, LoanFormData, Member } from '@/core/types';
 import { calculateFrenchAmortization } from '@/core/hooks/useFinance';
 import {
   Plus, CreditCard, DollarSign, Calendar as CalendarIcon,
-  RefreshCw, Eye, TrendingUp, Calculator, ChevronRight, ArrowLeft, User, Trash2, AlertTriangle, MessageSquare, Undo2
+  RefreshCw, Eye, TrendingUp, Calculator, ArrowLeft, Trash2, AlertTriangle, MessageSquare, Undo2
 } from 'lucide-react';
-import { DatePicker } from '@/shared/ui/date-picker';
-import { LoanCard } from './components/LoanCard';
 import { RefinanceModal } from './components/RefinanceModal';
 
 type ViewMode = 'members' | 'member-loans' | 'loan-detail';
+type LoanFilter = "all" | "active" | "pending_retention" | "paid";
+
+interface MemberLoanSummary {
+  member: Member;
+  totalLoans: number;
+  activeLoans: number;
+  pendingRetentionLoans: number;
+  paidLoans: number;
+  totalLoaned: number;
+  totalDebt: number;
+}
 
 export function Loans() {
   const {
@@ -56,6 +49,8 @@ export function Loans() {
   const [viewMode, setViewMode] = useState<ViewMode>('members');
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [loanFilter, setLoanFilter] = useState<LoanFilter>("all");
 
   // Modal states
   const [showForm, setShowForm] = useState(false);
@@ -112,22 +107,51 @@ export function Loans() {
     }
   }, [formData.amount, formData.monthlyInterestRate, formData.termMonths, formData.startDate, config.transferFee]);
 
-  // Préstamos agrupados por socio
-  const memberLoansData = useMemo(() => {
-    const activeMembers = members.filter(m => m.status === 'active');
-    return activeMembers.map(member => {
-      const memberLoans = loans.filter(l => l.memberId === member.id);
-      const activeLoans = memberLoans.filter(l => l.status === 'active');
-      const totalDebt = activeLoans.reduce((sum, l) => sum + l.remainingPrincipal, 0);
-      return {
-        member,
-        totalLoans: memberLoans.length,
-        activeLoans: activeLoans.length,
-        totalDebt,
-        loans: memberLoans.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()),
-      };
-    }).filter(m => m.totalLoans > 0 || true); // Show all active members
+  // Resumen de préstamos por socio para la vista principal
+  const memberLoanSummaries = useMemo<MemberLoanSummary[]>(() => {
+    return members
+      .filter((member) => member.status === "active")
+      .map((member) => {
+        const memberLoans = loans.filter((loan) => loan.memberId === member.id);
+        const activeLoans = memberLoans.filter((loan) => loan.status === "active");
+        const pendingRetentionLoans = memberLoans.filter((loan) => loan.status === "pending_retention");
+        const paidLoans = memberLoans.filter((loan) => loan.status === "paid");
+
+        if (memberLoans.length === 0) return null;
+
+        return {
+          member,
+          totalLoans: memberLoans.length,
+          activeLoans: activeLoans.length,
+          pendingRetentionLoans: pendingRetentionLoans.length,
+          paidLoans: paidLoans.length,
+          totalLoaned: memberLoans.reduce((sum, loan) => sum + loan.amount, 0),
+          totalDebt: activeLoans.reduce((sum, loan) => sum + loan.remainingPrincipal, 0),
+        };
+      })
+      .filter((summary): summary is MemberLoanSummary => summary !== null);
   }, [members, loans]);
+
+  const loanFilterOptions = useMemo<Array<{ value: LoanFilter; label: string; count: number }>>(() => [
+    { value: "all", label: "Todos", count: memberLoanSummaries.length },
+    { value: "active", label: "Con préstamos activos", count: memberLoanSummaries.filter((summary) => summary.activeLoans > 0).length },
+    { value: "pending_retention", label: "Retención pendiente", count: memberLoanSummaries.filter((summary) => summary.pendingRetentionLoans > 0).length },
+    { value: "paid", label: "Préstamos pagados", count: memberLoanSummaries.filter((summary) => summary.totalLoans > 0 && summary.activeLoans === 0 && summary.pendingRetentionLoans === 0 && summary.paidLoans > 0).length },
+  ], [memberLoanSummaries]);
+
+  const filteredMemberLoanSummaries = useMemo(() => {
+    const query = memberSearch.trim().toLowerCase();
+
+    return memberLoanSummaries.filter((summary) => {
+      const matchesSearch = !query || summary.member.name.toLowerCase().includes(query) || summary.member.phone.includes(query);
+      const matchesFilter = loanFilter === "all"
+        || (loanFilter === "active" && summary.activeLoans > 0)
+        || (loanFilter === "pending_retention" && summary.pendingRetentionLoans > 0)
+        || (loanFilter === "paid" && summary.activeLoans === 0 && summary.pendingRetentionLoans === 0 && summary.paidLoans > 0);
+
+      return matchesSearch && matchesFilter;
+    });
+  }, [memberLoanSummaries, memberSearch, loanFilter]);
 
   // Préstamos del socio seleccionado
   const memberLoans = useMemo(() => {
@@ -292,159 +316,254 @@ export function Loans() {
     totalPending: loans.filter(l => l.status === 'active').reduce((sum, l) => sum + l.remainingPrincipal, 0),
   }), [loans]);
 
-  return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header con navegación */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {viewMode !== 'members' && (
-            <Button variant="ghost" size="sm" onClick={handleBack}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Volver
-            </Button>
-          )}
+  const loanColumns: Column<Loan>[] = [
+    {
+      key: "status",
+      header: "Estado",
+      render: (loan) => {
+        const status = {
+          pending_retention: { label: "Retención pendiente", className: "bg-warning/10 text-warning" },
+          active: { label: "Activo", className: "bg-primary/10 text-primary" },
+          paid: { label: "Pagado", className: "bg-success/10 text-success" },
+          refinanced: { label: "Refinanciado", className: "bg-secondary/10 text-secondary" },
+          defaulted: { label: "En mora", className: "bg-destructive/10 text-destructive" },
+          cancelled: { label: "Cancelado", className: "bg-muted text-muted-foreground" },
+        }[loan.status];
+
+        return <Chip size="sm" variant="soft" className={status.className}>{status.label}</Chip>;
+      },
+    },
+    {
+      key: "amount",
+      header: "Monto",
+      align: "right",
+      render: (loan) => formatCurrency(loan.amount, config.currencyCode),
+    },
+    {
+      key: "monthlyPayment",
+      header: "Cuota mensual",
+      align: "right",
+      render: (loan) => formatCurrency(loan.monthlyPayment, config.currencyCode),
+    },
+    {
+      key: "remainingPrincipal",
+      header: "Saldo pendiente",
+      align: "right",
+      render: (loan) => (
+        <span className={loan.remainingPrincipal > 0.01 ? "font-medium text-destructive" : "font-medium text-success"}>
+          {formatCurrency(loan.remainingPrincipal, config.currencyCode)}
+        </span>
+      ),
+    },
+    {
+      key: "termMonths",
+      header: "Plazo",
+      align: "center",
+      render: (loan) => loan.termMonths + " meses",
+    },
+    {
+      key: "startDate",
+      header: "Inicio",
+      render: (loan) => formatDate(loan.startDate),
+    },
+    {
+      key: "actions",
+      header: "Acciones",
+      align: "center",
+      width: "88px",
+      render: (loan) => {
+        const hasPayments = transactions.some(
+          (transaction) => transaction.referenceId === loan.id && transaction.type === "loan_payment",
+        );
+
+        return hasPayments ? (
+          <span className="text-muted-foreground">—</span>
+        ) : (
+          <TableActionButton
+            label="Eliminar préstamo"
+            icon={Trash2}
+            tone="danger"
+            onPress={() => handleDeleteLoan(loan)}
+          />
+        );
+      },
+    },
+  ];
+
+  const memberLoanColumns: Column<MemberLoanSummary>[] = [
+    {
+      key: "member",
+      header: "Socio",
+      width: "28%",
+      align: "left",
+      render: ({ member }) => (
+        <div className="flex !justify-start items-center gap-3">
+          <MemberAvatar name={member.name} photo={member.profilePhoto} />
           <div>
-            <div className="flex items-center gap-2">
-              <CreditCard className="w-5 h-5 text-foreground" />
-              <h1 className="text-2xl font-bold text-foreground">
-                {viewMode === 'members'
-                  ? 'Préstamos'
-                  : viewMode === 'member-loans'
-                  ? selectedMember?.name
-                  : viewMode === 'loan-detail'
-                  ? `Préstamo #${selectedLoan?.id.slice(0, 8)}`
-                  : ''}
-              </h1>
-            </div>
-            <p className="text-muted-foreground mt-1">
-              {viewMode === 'members'
-                ? 'Seleccione un socio para ver sus préstamos'
-                : viewMode === 'member-loans'
-                ? `${memberLoans.length} préstamo(s) registrado(s)`
-                : viewMode === 'loan-detail'
-                ? `Iniciado el ${formatDate(selectedLoan?.startDate || '')}`
-                : ''}
-            </p>
+            <p className="font-medium text-foreground">{member.name}</p>
+            <p className="text-sm text-muted-foreground">{member.phone || "Sin teléfono"}</p>
           </div>
         </div>
+      ),
+    },
+    {
+      key: "loans",
+      header: "Préstamos",
+      width: "17%",
+      align: "center",
+      render: ({ totalLoans, activeLoans, paidLoans }) => {
+        if (totalLoans === 0) return <span className="text-muted-foreground">—</span>;
+        return <span>{activeLoans} activo(s) · {paidLoans} pagado(s)</span>;
+      },
+    },
+    {
+      key: "pendingRetentionLoans",
+      header: "Retención",
+      width: "14%",
+      align: "center",
+      render: ({ pendingRetentionLoans }) => pendingRetentionLoans,
+    },
+    {
+      key: "totalLoaned",
+      header: "Total otorgado",
+      width: "16%",
+      align: "right",
+      render: ({ totalLoaned }) => formatCurrency(totalLoaned, config.currencyCode),
+    },
+    {
+      key: "totalDebt",
+      header: "Saldo pendiente",
+      width: "15%",
+      align: "right",
+      render: ({ totalDebt }) => (
+        <span className={totalDebt > 0 ? "font-medium text-destructive" : "text-muted-foreground"}>
+          {formatCurrency(totalDebt, config.currencyCode)}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Estado",
+      width: "10%",
+      align: "center",
+      render: ({ totalLoans, activeLoans, pendingRetentionLoans, paidLoans }) => {
+        if (totalLoans === 0) return <Chip size="sm" variant="soft" className="bg-muted text-muted-foreground">Sin préstamos</Chip>;
+        if (pendingRetentionLoans > 0) return <Chip size="sm" variant="soft" className="bg-warning/10 text-warning">Pendiente</Chip>;
+        if (activeLoans > 0) return <Chip size="sm" variant="soft" className="bg-primary/10 text-primary">Activo</Chip>;
+        return <Chip size="sm" variant="soft" className="bg-success/10 text-success">Pagado</Chip>;
+      },
+    },
+  ];
 
-        {viewMode === 'members' && (
-          <Button onClick={() => handleOpenForm()}>
-            <Plus className="w-4 h-4 mr-2" />
-            Nuevo Préstamo
-          </Button>
-        )}
-        {viewMode === 'member-loans' && selectedMember && (
-          <Button onClick={() => handleOpenForm(selectedMember)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Nuevo Préstamo
-          </Button>
-        )}
-      </div>
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <PageHeader
+        title={
+          viewMode === "members"
+            ? "Préstamos"
+            : viewMode === "member-loans"
+              ? selectedMember?.name || ""
+              : viewMode === "loan-detail"
+                ? "Préstamo #" + selectedLoan?.id.slice(0, 8)
+                : ""
+        }
+        description={
+          viewMode === "members"
+            ? "Seleccione una fila para ver los préstamos del socio"
+            : viewMode === "member-loans"
+              ? memberLoans.length + " préstamo(s) registrado(s)"
+              : viewMode === "loan-detail"
+                ? "Iniciado el " + formatDate(selectedLoan?.startDate || "")
+                : ""
+        }
+        actions={
+          <>
+            {viewMode !== "members" && (
+              <Button variant="ghost" size="sm" onPress={handleBack}>
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Volver
+              </Button>
+            )}
+            {viewMode === "members" && (
+              <Button onPress={() => handleOpenForm()}>
+                <Plus className="w-4 h-4 mr-2" />
+                Nuevo Préstamo
+              </Button>
+            )}
+            {viewMode === "member-loans" && selectedMember && (
+              <Button onPress={() => handleOpenForm(selectedMember)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Nuevo Préstamo
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {/* Vista: Lista de Socios */}
       {viewMode === 'members' && (
         <>
           {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-lg bg-amber-100">
-                    <CreditCard className="w-5 h-5 text-amber-700" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Activos</p>
-                    <p className="text-2xl font-bold text-foreground">{stats.totalActive}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-lg bg-emerald-100">
-                    <DollarSign className="w-5 h-5 text-emerald-700" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Prestado</p>
-                    <p className="text-2xl font-bold text-foreground">{formatCurrency(stats.totalLoaned, config.currencyCode)}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-lg bg-emerald-100">
-                    <TrendingUp className="w-5 h-5 text-emerald-700" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Interés Total</p>
-                    <p className="text-2xl font-bold text-foreground">{formatCurrency(stats.totalInterest, config.currencyCode)}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-lg bg-amber-100">
-                    <CalendarIcon className="w-5 h-5 text-amber-700" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Por Cobrar</p>
-                    <p className="text-2xl font-bold text-foreground">{formatCurrency(stats.totalPending, config.currencyCode)}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <StatCard
+              label="Activos"
+              value={stats.totalActive}
+              icon={CreditCard}
+              tone="primary"
+            />
+            <StatCard
+              label="Total Prestado"
+              value={formatCurrency(stats.totalLoaned, config.currencyCode)}
+              icon={DollarSign}
+              tone="success"
+            />
+            <StatCard
+              label="Interés Total"
+              value={formatCurrency(stats.totalInterest, config.currencyCode)}
+              icon={TrendingUp}
+              tone="success"
+            />
+            <StatCard
+              label="Por Cobrar"
+              value={formatCurrency(stats.totalPending, config.currencyCode)}
+              icon={CalendarIcon}
+              tone="warning"
+            />
           </div>
 
-          {/* Lista de socios */}
-          <Card>
-            <div className="divide-y divide-border">
-              {memberLoansData.map(({ member, totalLoans, activeLoans, totalDebt }) => (
-                <button
-                  key={member.id}
-                  onClick={() => handleSelectMember(member)}
-                  className="w-full p-4 flex items-center justify-between hover:bg-muted transition-colors text-left"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                      <User className="w-4 h-4 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-foreground">{member.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {activeLoans > 0 ? (
-                          <span className="text-foreground">{activeLoans} préstamo(s) activo(s)</span>
-                        ) : totalLoans > 0 ? (
-                          <span className="text-foreground">{totalLoans} préstamo(s) pagado(s)</span>
-                        ) : (
-                          <span>Sin préstamos</span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {totalDebt > 0 && (
-                      <div className="text-right">
-                        <p className="text-sm text-muted-foreground">Saldo pendiente</p>
-                        <p className="font-bold text-destructive">{formatCurrency(totalDebt, config.currencyCode)}</p>
-                      </div>
-                    )}
-                    <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                  </div>
-                </button>
-              ))}
-              {memberLoansData.length === 0 && (
-                <div className="p-8 text-center text-muted-foreground">
-                  No hay socios registrados
-                </div>
-              )}
-            </div>
-          </Card>
+          <DataTable
+            data={filteredMemberLoanSummaries}
+            columns={memberLoanColumns}
+            keyExtractor={({ member }) => member.id}
+            searchValue={memberSearch}
+            onSearchChange={setMemberSearch}
+            searchPlaceholder="Buscar socio por nombre o teléfono..."
+            toolbar={(
+              <Select
+                className="w-full sm:w-56"
+                value={loanFilter}
+                onChange={(value) => setLoanFilter(value as LoanFilter)}
+                aria-label="Filtrar préstamos"
+              >
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {loanFilterOptions.map((filter) => (
+                      <ListBox.Item key={filter.value} id={filter.value} textValue={filter.label}>
+                        {filter.label} ({filter.count})
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+            )}
+            onRowClick={({ member }) => handleSelectMember(member)}
+            emptyMessage="No hay socios que coincidan con los filtros"
+          />
         </>
       )}
 
@@ -455,33 +574,35 @@ export function Loans() {
             <Card className="p-8 text-center">
               <CreditCard className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
               <p className="text-muted-foreground">Este socio no tiene préstamos registrados</p>
-              <Button className="mt-4" onClick={() => handleOpenForm(selectedMember)}>
+              <Button className="mt-4" onPress={() => handleOpenForm(selectedMember)}>
                 Crear Primer Préstamo
               </Button>
             </Card>
           ) : (
             <>
-              {/* Préstamos Activos */}
               {activeLoans.length > 0 && (
                 <div>
-                  <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">Activos</h3>
-                  <div className="space-y-2">
-                    {activeLoans.map(loan => (
-                      <LoanCard key={loan.id} loan={loan} onSelect={handleSelectLoan} onDelete={handleDeleteLoan} transactions={transactions} />
-                    ))}
-                  </div>
+                  <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">Activos</h3>
+                  <DataTable
+                    data={activeLoans}
+                    columns={loanColumns}
+                    keyExtractor={(loan) => loan.id}
+                    onRowClick={handleSelectLoan}
+                    emptyMessage="No hay préstamos activos"
+                  />
                 </div>
               )}
 
-              {/* Préstamos Pagados */}
               {paidLoans.length > 0 && (
                 <div>
-                  <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">Pagados</h3>
-                  <div className="space-y-2">
-                    {paidLoans.map(loan => (
-                      <LoanCard key={loan.id} loan={loan} onSelect={handleSelectLoan} onDelete={handleDeleteLoan} transactions={transactions} />
-                    ))}
-                  </div>
+                  <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">Pagados</h3>
+                  <DataTable
+                    data={paidLoans}
+                    columns={loanColumns}
+                    keyExtractor={(loan) => loan.id}
+                    onRowClick={handleSelectLoan}
+                    emptyMessage="No hay préstamos pagados"
+                  />
                 </div>
               )}
             </>
@@ -494,22 +615,20 @@ export function Loans() {
         <div className="space-y-6">
           {/* Alerta de retención pendiente */}
           {selectedLoan.status === 'pending_retention' && (
-            <div className="bg-yellow-50 border-2 border-yellow-600 rounded-lg p-4">
+            <div className="bg-warning/10 border border-warning/30 rounded-[var(--radius)] p-4">
               <div className="flex items-start gap-4">
-                <div className="p-2.5 rounded-lg bg-yellow-100">
-                  <Calculator className="w-5 h-5 text-yellow-600" />
-                </div>
+                <Calculator className="w-5 h-5 text-warning shrink-0" />
                 <div className="flex-1">
-                  <h3 className="font-semibold text-yellow-800 mb-1">
+                  <h3 className="font-semibold text-warning mb-1">
                     Retención por Suministros Pendiente
                   </h3>
-                  <p className="text-sm text-yellow-700 mb-3">
+                  <p className="text-sm text-warning mb-3">
                     Se debe cobrar {formatCurrency(selectedLoan.retentionAmount, config.currencyCode)} ({formatPercentage(config.retentionRate)}) antes de desembolsar el préstamo.
                   </p>
                   <Button
-                    variant="default"
+                    variant="primary"
                     size="sm"
-                    onClick={() => payRetention(selectedLoan.id)}
+                    onPress={() => payRetention(selectedLoan.id)}
                   >
                     <DollarSign className="w-4 h-4 mr-2" />
                     Registrar Pago de Retención
@@ -521,7 +640,7 @@ export function Loans() {
 
           {/* Info del préstamo */}
           <Card>
-            <CardContent className="p-6">
+            <Card.Content className="p-6">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                 <div>
                   <p className="text-sm text-muted-foreground">Monto</p>
@@ -560,20 +679,22 @@ export function Loans() {
                   <span>{selectedLoan.paidInstallments}/{selectedLoan.totalInstallments} cuotas pagadas</span>
                   <span className="font-semibold">{((selectedLoan.paidInstallments / selectedLoan.totalInstallments) * 100).toFixed(0)}%</span>
                 </div>
-                <div className="w-full bg-muted rounded-full h-3">
-                  <div
-                    className="bg-primary h-3 rounded-full transition-all"
-                    style={{ width: `${(selectedLoan.paidInstallments / selectedLoan.totalInstallments) * 100}%` }}
-                  />
-                </div>
+                <ProgressBar
+                  value={(selectedLoan.paidInstallments / selectedLoan.totalInstallments) * 100}
+                  aria-label="Progreso del préstamo"
+                >
+                  <ProgressBar.Track className="h-3">
+                    <ProgressBar.Fill />
+                  </ProgressBar.Track>
+                </ProgressBar>
               </div>
 
               {/* Actions */}
               {selectedLoan.remainingPrincipal > 0.01 && (
                 <div className="flex gap-3 mt-6 pt-6 border-t border-border">
                   <Button
-                    onClick={() => setShowPayment(true)}
-                    disabled={selectedLoan.status === 'pending_retention'}
+                    onPress={() => setShowPayment(true)}
+                    isDisabled={selectedLoan.status === 'pending_retention'}
                     className={selectedLoan.status === 'pending_retention' ? 'opacity-50 cursor-not-allowed' : ''}
                   >
                     <DollarSign className="w-4 h-4 mr-2" />
@@ -581,8 +702,8 @@ export function Loans() {
                   </Button>
                   <Button
                     variant="secondary"
-                    onClick={() => setShowRefinance(true)}
-                    disabled={selectedLoan.status === 'pending_retention'}
+                    onPress={() => setShowRefinance(true)}
+                    isDisabled={selectedLoan.status === 'pending_retention'}
                     className={selectedLoan.status === 'pending_retention' ? 'opacity-50 cursor-not-allowed' : ''}
                   >
                     <RefreshCw className="w-4 h-4 mr-2" />
@@ -590,8 +711,8 @@ export function Loans() {
                   </Button>
                   {selectedLoan.paidInstallments > 0 && (
                     <Button
-                      variant="destructive"
-                      onClick={() => handleAnnulPayment(selectedLoan)}
+                      variant="danger"
+                      onPress={() => handleAnnulPayment(selectedLoan)}
                     >
                       <Undo2 className="w-4 h-4 mr-2" />
                       Anular último pago
@@ -603,77 +724,80 @@ export function Loans() {
               {selectedLoan.remainingPrincipal <= 0.01 && selectedLoan.paidInstallments > 0 && (
                 <div className="flex gap-3 mt-6 pt-6 border-t border-border">
                   <Button
-                    variant="destructive"
-                    onClick={() => handleAnnulPayment(selectedLoan)}
+                    variant="danger"
+                    onPress={() => handleAnnulPayment(selectedLoan)}
                   >
                     <Undo2 className="w-4 h-4 mr-2" />
                     Anular último pago
                   </Button>
                 </div>
               )}
-            </CardContent>
+            </Card.Content>
           </Card>
 
           {/* Tabla de amortización */}
           <Card>
-            <CardHeader>
-              <CardTitle>Tabla de Amortización</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>#</TableHead>
-                      <TableHead>Fecha</TableHead>
-                      <TableHead className="text-right">Capital</TableHead>
-                      <TableHead className="text-right">Interés</TableHead>
-                      <TableHead className="text-right">Transfer.</TableHead>
-                      <TableHead className="text-right">Total Cuota</TableHead>
-                      <TableHead className="text-right">Saldo</TableHead>
-                      <TableHead className="text-center">Estado</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+            <Card.Header>
+              <Card.Title>Tabla de Amortización</Card.Title>
+            </Card.Header>
+            <Card.Content>
+              <Table className={tableStyles.root}>
+                <Table.ScrollContainer className={tableStyles.scroll}>
+                  <Table.Content aria-label="Tabla de Amortización">
+                    <Table.Header className={tableStyles.header}>
+                      <Table.Column id="installment" className={tableStyles.column}>#</Table.Column>
+                      <Table.Column id="fecha" className={tableStyles.column}>Fecha</Table.Column>
+                      <Table.Column id="capital" className={tableStyles.column + " text-right"}>Capital</Table.Column>
+                      <Table.Column id="inter-s" className={tableStyles.column + " text-right"}>Interés</Table.Column>
+                      <Table.Column id="transfer" className={tableStyles.column + " text-right"}>Transfer.</Table.Column>
+                      <Table.Column id="total-cuota" className={tableStyles.column + " text-right"}>Total Cuota</Table.Column>
+                      <Table.Column id="saldo" className={tableStyles.column + " text-right"}>Saldo</Table.Column>
+                      <Table.Column id="estado" className={tableStyles.column + " text-center"}>Estado</Table.Column>
+                  </Table.Header>
+                  <Table.Body>
                     {amortizationSchedule.schedule.map((entry) => {
                       const isPaid = entry.installmentNumber <= selectedLoan.paidInstallments;
                       const hadPenalty = isPaid && selectedLoan.lastPaymentPenalty && selectedLoan.lastPaymentPenalty > 0 && entry.installmentNumber === selectedLoan.paidInstallments;
                       return (
-                        <TableRow
+                        <Table.Row
                           key={entry.installmentNumber}
-                          className={isPaid ? 'bg-muted/50' : ''}
+                          id={String(entry.installmentNumber)}
+                          className={tableStyles.row + (isPaid ? " [&_.table__cell]:bg-muted/50" : "")}
                         >
-                          <TableCell className="font-medium">{entry.installmentNumber}</TableCell>
-                          <TableCell>{formatDate(entry.dueDate)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(entry.principal, config.currencyCode)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(entry.interest, config.currencyCode)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(entry.transferFee, config.currencyCode)}</TableCell>
-                          <TableCell className="text-right font-medium">{formatCurrency(entry.payment, config.currencyCode)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(entry.balance, config.currencyCode)}</TableCell>
-                          <TableCell className="text-center">
+                          <Table.Cell className={tableStyles.cell + " font-medium"}>{entry.installmentNumber}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell}>{formatDate(entry.dueDate)}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.principal, config.currencyCode)}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.interest, config.currencyCode)}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.transferFee, config.currencyCode)}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell + " text-right font-medium"}>{formatCurrency(entry.payment, config.currencyCode)}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.balance, config.currencyCode)}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell + " text-center"}>
                             {isPaid ? (
-                              <Badge
+                              <Chip
+                                size="sm"
+                                variant="soft"
                                 className={
                                   hadPenalty
-                                    ? 'bg-rose-100 text-rose-700'
-                                    : 'bg-emerald-100 text-emerald-700'
+                                    ? 'bg-destructive/10 text-destructive'
+                                    : 'bg-success/10 text-success'
                                 }
                               >
                                 Pagado
-                              </Badge>
+                              </Chip>
                             ) : (
-                              <div className="inline-flex items-center px-2 py-1 rounded-md bg-yellow-50 text-yellow-800 border-2 border-yellow-600 text-xs font-medium">
+                              <Chip size="sm" variant="soft" className="bg-warning/10 text-warning">
                                 Pendiente
-                              </div>
+                              </Chip>
                             )}
-                          </TableCell>
-                        </TableRow>
+                          </Table.Cell>
+                        </Table.Row>
                       );
                     })}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
+                      </Table.Body>
+                    </Table.Content>
+                  </Table.ScrollContainer>
+              </Table>
+            </Card.Content>
           </Card>
         </div>
       )}
@@ -687,98 +811,105 @@ export function Loans() {
         submitText="Aprobar Préstamo"
         className="sm:max-w-2xl"
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>Socio *</Label>
-            <Select
-              value={formData.memberId}
-              onValueChange={(value) => setFormData({ ...formData, memberId: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar socio..." />
-              </SelectTrigger>
-              <SelectContent>
+        <div className="space-y-4">
+          <Select
+            fullWidth
+            placeholder="Seleccionar socio..."
+            selectedKey={formData.memberId || null}
+            onSelectionChange={(key) => setFormData({ ...formData, memberId: String(key) })}
+          >
+            <Label>Socio <span className="text-destructive" aria-hidden="true">*</span></Label>
+            <Select.Trigger>
+              <Select.Value />
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
                 {memberOptions.map(opt => (
-                  <SelectItem key={opt.value} value={opt.value}>
+                  <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
                     {opt.label}
-                  </SelectItem>
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
                 ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Monto *</Label>
+              </ListBox>
+            </Select.Popover>
+          </Select>
+          <TextField fullWidth type="number">
+            <Label>Monto <span className="text-destructive" aria-hidden="true">*</span></Label>
             <div className="relative">
               <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                type="number"
                 value={formData.amount || ''}
                 onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
                 className="pl-9"
               />
             </div>
-          </div>
-          <div className="space-y-2">
+          </TextField>
+          <Select
+            fullWidth
+            selectedKey={String(formData.monthlyInterestRate)}
+            onSelectionChange={(key) => setFormData({ ...formData, monthlyInterestRate: parseFloat(String(key)) })}
+          >
             <Label>Tasa de Interés Mensual</Label>
-            <Select
-              value={String(formData.monthlyInterestRate)}
-              onValueChange={(value) => setFormData({ ...formData, monthlyInterestRate: parseFloat(value) })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">1%</SelectItem>
-                <SelectItem value="2">2%</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
+            <Select.Trigger>
+              <Select.Value />
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item id="1" textValue="1%">1%<ListBox.ItemIndicator /></ListBox.Item>
+                <ListBox.Item id="2" textValue="2%">2%<ListBox.ItemIndicator /></ListBox.Item>
+              </ListBox>
+            </Select.Popover>
+          </Select>
+          <TextField fullWidth type="number">
             <Label>Plazo (meses)</Label>
             <Input
-              type="number"
               value={formData.termMonths || ''}
               onChange={(e) => setFormData({ ...formData, termMonths: parseInt(e.target.value) || 0 })}
             />
-          </div>
-          <div className="space-y-2">
-            <Label>Fecha de inicio</Label>
-            <DatePicker
-              value={formData.startDate}
-              onChange={(value) => setFormData({ ...formData, startDate: value })}
-            />
-          </div>
-          <div className="space-y-2">
+          </TextField>
+          <DatePicker
+            label="Fecha de inicio"
+            value={formData.startDate}
+            onChange={(value) => setFormData({ ...formData, startDate: value })}
+          />
+          <TextField fullWidth>
             <Label>Notas</Label>
-            <Input
+            <TextArea
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
             />
-          </div>
+          </TextField>
         </div>
 
         {/* Checkbox para confirmar retención pagada */}
         <div className="mt-4">
-          <label className="flex items-center gap-3 p-3 bg-yellow-50 border-2 border-yellow-600 rounded-lg cursor-pointer hover:bg-accent transition-colors">
-            <Checkbox
-              checked={formData.retentionPaid}
-              onCheckedChange={(checked) => setFormData({ ...formData, retentionPaid: checked as boolean })}
-            />
-            <div>
-              <span className="text-sm font-medium text-yellow-800">
-                Confirmar pago de retención por suministros
-              </span>
-              <p className="text-xs text-yellow-700 mt-1">
-                Marque esta casilla si el socio ya pagó la retención de {formatCurrency(formData.amount * formData.monthlyInterestRate / 100, config.currencyCode)} ({formatPercentage(formData.monthlyInterestRate)} del monto del préstamo).
-              </p>
-            </div>
-          </label>
+          <Checkbox
+            isSelected={formData.retentionPaid}
+            onChange={(checked) => setFormData({ ...formData, retentionPaid: checked })}
+            className="w-full p-3 bg-warning/10 border border-warning/30 rounded-[var(--radius)] hover:bg-warning/15 transition-colors"
+          >
+            <Checkbox.Content className="flex items-center gap-3">
+              <Checkbox.Control>
+                <Checkbox.Indicator />
+              </Checkbox.Control>
+              <div>
+                <span className="text-sm font-medium text-foreground">
+                  Confirmar pago de retención por suministros
+                </span>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Marque esta casilla si el socio ya pagó la retención de {formatCurrency(formData.amount * formData.monthlyInterestRate / 100, config.currencyCode)} ({formatPercentage(formData.monthlyInterestRate)} del monto del préstamo).
+                </p>
+              </div>
+            </Checkbox.Content>
+          </Checkbox>
         </div>
 
         {simulatedLoan && formData.amount > 0 && (
           <div className="mt-4 space-y-3">
             {/* Resumen rápido */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-3 bg-muted rounded-lg text-sm">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4 rounded-[var(--radius)] border border-border bg-muted text-sm">
               <div>
                 <p className="text-muted-foreground">Retención</p>
                 <p className="font-bold text-foreground">{formatCurrency(formData.amount * formData.monthlyInterestRate / 100, config.currencyCode)}</p>
@@ -813,32 +944,34 @@ export function Loans() {
             </div>
 
             {/* Tabla de amortización */}
-            <div className="max-h-52 overflow-y-auto rounded-lg border border-border text-sm">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="sticky top-0 bg-muted z-10 py-2">#</TableHead>
-                    <TableHead className="sticky top-0 bg-muted z-10 py-2">Fecha</TableHead>
-                    <TableHead className="sticky top-0 bg-muted z-10 py-2 text-right">Capital</TableHead>
-                    <TableHead className="sticky top-0 bg-muted z-10 py-2 text-right">Interés</TableHead>
-                    <TableHead className="sticky top-0 bg-muted z-10 py-2 text-right">Transfer.</TableHead>
-                    <TableHead className="sticky top-0 bg-muted z-10 py-2 text-right">Cuota</TableHead>
-                    <TableHead className="sticky top-0 bg-muted z-10 py-2 text-right">Saldo</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+            <div className="max-h-52 overflow-y-auto">
+              <Table className={tableStyles.root}>
+                <Table.ScrollContainer className={tableStyles.scroll}>
+                  <Table.Content aria-label="Tabla de amortización simulada">
+                    <Table.Header className={tableStyles.header}>
+                    <Table.Column id="installment" className={tableStyles.column + " sticky top-0 z-10"}>#</Table.Column>
+                    <Table.Column id="fecha" className={tableStyles.column + " sticky top-0 z-10"}>Fecha</Table.Column>
+                    <Table.Column id="capital" className={tableStyles.column + " text-right"}>Capital</Table.Column>
+                    <Table.Column id="inter-s" className={tableStyles.column + " text-right"}>Interés</Table.Column>
+                    <Table.Column id="transfer" className={tableStyles.column + " text-right"}>Transfer.</Table.Column>
+                    <Table.Column id="cuota" className={tableStyles.column + " sticky top-0 z-10 text-right"}>Cuota</Table.Column>
+                    <Table.Column id="saldo" className={tableStyles.column + " text-right"}>Saldo</Table.Column>
+                </Table.Header>
+                <Table.Body>
                   {simulatedLoan.schedule.map((entry) => (
-                    <TableRow key={entry.installmentNumber}>
-                      <TableCell className="py-1.5">{entry.installmentNumber}</TableCell>
-                      <TableCell className="py-1.5">{formatDate(entry.dueDate)}</TableCell>
-                      <TableCell className="py-1.5 text-right">{formatCurrency(entry.principal, config.currencyCode)}</TableCell>
-                      <TableCell className="py-1.5 text-right">{formatCurrency(entry.interest, config.currencyCode)}</TableCell>
-                      <TableCell className="py-1.5 text-right">{formatCurrency(entry.transferFee || 0, config.currencyCode)}</TableCell>
-                      <TableCell className="py-1.5 text-right font-medium">{formatCurrency(entry.payment, config.currencyCode)}</TableCell>
-                      <TableCell className="py-1.5 text-right">{formatCurrency(entry.balance, config.currencyCode)}</TableCell>
-                    </TableRow>
+                    <Table.Row key={entry.installmentNumber} id={String(entry.installmentNumber)} className={tableStyles.row}>
+                      <Table.Cell className={tableStyles.cell}>{entry.installmentNumber}</Table.Cell>
+                      <Table.Cell className={tableStyles.cell}>{formatDate(entry.dueDate)}</Table.Cell>
+                      <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.principal, config.currencyCode)}</Table.Cell>
+                      <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.interest, config.currencyCode)}</Table.Cell>
+                      <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.transferFee || 0, config.currencyCode)}</Table.Cell>
+                      <Table.Cell className={tableStyles.cell + " text-right font-medium"}>{formatCurrency(entry.payment, config.currencyCode)}</Table.Cell>
+                      <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.balance, config.currencyCode)}</Table.Cell>
+                    </Table.Row>
                   ))}
-                </TableBody>
+                    </Table.Body>
+                  </Table.Content>
+                </Table.ScrollContainer>
               </Table>
             </div>
           </div>
@@ -861,28 +994,32 @@ export function Loans() {
               const currentDay = today.getDate();
               const dueDay = config.loanPaymentDueDay ?? 18;
               return currentDay >= dueDay && selectedLoan.remainingPrincipal > 0.01 ? (
-                <div className="p-3 bg-muted rounded-lg border border-border space-y-3">
+                <div className="p-4 rounded-[var(--radius)] border border-border bg-muted space-y-3">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
                     <p className="text-sm font-medium text-destructive">
                       Pago tardío: Hoy es día {currentDay}. Día límite: {dueDay}.
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 pl-6">
-                    <Checkbox
-                      id="apply-penalty"
-                      checked={appliedLatePaymentPenalty}
-                      onCheckedChange={(checked) => setAppliedLatePaymentPenalty(checked as boolean)}
-                      className="h-4 w-4"
-                    />
-                    <Label htmlFor="apply-penalty" className="text-sm text-foreground cursor-pointer font-normal">
-                      Aplicar multa de {formatCurrency(config.penaltyAmount, config.currencyCode)}
-                    </Label>
-                  </div>
+                  <Checkbox
+                    id="apply-penalty"
+                    isSelected={appliedLatePaymentPenalty}
+                    onChange={(checked) => setAppliedLatePaymentPenalty(checked)}
+                    className="pl-6"
+                  >
+                    <Checkbox.Content className="flex items-center gap-2">
+                      <Checkbox.Control className="h-4 w-4">
+                        <Checkbox.Indicator />
+                      </Checkbox.Control>
+                      <span className="text-sm text-foreground cursor-pointer font-normal">
+                        Aplicar multa de {formatCurrency(config.penaltyAmount, config.currencyCode)}
+                      </span>
+                    </Checkbox.Content>
+                  </Checkbox>
                 </div>
               ) : null;
             })()}
-            <div className="p-4 bg-muted rounded-lg">
+            <div className="p-4 rounded-[var(--radius)] border border-border bg-muted">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Saldo pendiente</span>
                 <span className="font-bold text-foreground">{formatCurrency(selectedLoan.remainingPrincipal, config.currencyCode)}</span>
@@ -893,21 +1030,21 @@ export function Loans() {
               </div>
             </div>
             {Math.abs(selectedLoan.remainingPrincipal) <= 0.01 ? (
-              <div className="p-4 bg-success/10 rounded-lg text-sm text-success">
+              <div className="p-4 rounded-[var(--radius)] border border-success/30 bg-success/10 text-sm text-success">
                 🎉 El préstamo está completamente pagado. Confirme para marcarlo como finalizado.
               </div>
             ) : selectedLoan.monthlyPayment > selectedLoan.remainingPrincipal ? (
-              <div className="p-3 bg-warning/10 rounded-lg text-sm text-warning">
+              <div className="p-3 rounded-[var(--radius)] border border-warning/30 bg-warning/10 text-sm text-warning">
                 La cuota mensual es mayor que el saldo pendiente. Se sugiere pagar {formatCurrency(selectedLoan.remainingPrincipal, config.currencyCode)} para cerrar el préstamo.
               </div>
             ) : null}
             {Math.abs(selectedLoan.remainingPrincipal) > 0.01 && (
               <div className="space-y-2">
+                <TextField fullWidth type="number">
                 <Label>Monto a pagar</Label>
                 <div className="relative">
                   <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
-                    type="number"
                     step="0.01"
                     max={selectedLoan.remainingPrincipal}
                     value={paymentAmount}
@@ -916,21 +1053,22 @@ export function Loans() {
                     className="pl-9"
                   />
                 </div>
+                </TextField>
                 {paymentAmount && (() => {
                   const baseAmount = parseFloat(paymentAmount) || 0;
                   const penaltyAmount = appliedLatePaymentPenalty ? (config.penaltyAmount ?? 5) : 0;
                   const totalAmount = baseAmount + penaltyAmount;
                   return penaltyAmount > 0 ? (
-                    <div className="mt-2 p-2 bg-amber-50 rounded text-sm">
+                    <div className="mt-2 p-3 rounded-[var(--radius)] border border-border bg-muted text-sm">
                       <div className="flex justify-between text-muted-foreground">
                         <span>Capital a pagar:</span>
                         <span>{formatCurrency(baseAmount, config.currencyCode)}</span>
                       </div>
-                      <div className="flex justify-between text-amber-700 font-medium mt-1">
+                      <div className="flex justify-between text-warning font-medium mt-1">
                         <span>+ Multa:</span>
                         <span>{formatCurrency(penaltyAmount, config.currencyCode)}</span>
                       </div>
-                      <div className="border-t border-amber-200 mt-1 pt-1 flex justify-between font-bold text-foreground">
+                      <div className="border-t border-border mt-1 pt-1 flex justify-between font-bold text-foreground">
                         <span>Total a pagar a Caja:</span>
                         <span>{formatCurrency(totalAmount, config.currencyCode)}</span>
                       </div>
@@ -940,13 +1078,13 @@ export function Loans() {
               </div>
             )}
             {Math.abs(selectedLoan.remainingPrincipal) <= 0.01 && (
-              <div className="p-3 bg-muted rounded-lg text-sm text-muted-foreground">
-                💡 El préstamo ya está pagado. Haga clic en "Finalizar Préstamo" para completar el proceso.
+              <div className="p-3 rounded-[var(--radius)] border border-border bg-muted text-sm text-muted-foreground">
+                El préstamo ya está pagado. Haga clic en "Finalizar Préstamo" para completar el proceso.
               </div>
             )}
             {Math.abs(selectedLoan.remainingPrincipal) > 0.01 && (
-              <div className="p-3 bg-muted rounded-lg text-sm text-muted-foreground">
-                💡 El pago se aplicará directamente al capital pendiente. Máximo: <strong>{formatCurrency(selectedLoan.remainingPrincipal, config.currencyCode)}</strong>
+              <div className="p-3 rounded-[var(--radius)] border border-border bg-muted text-sm text-muted-foreground">
+                El pago se aplicará directamente al capital pendiente. Máximo: <strong>{formatCurrency(selectedLoan.remainingPrincipal, config.currencyCode)}</strong>
               </div>
             )}
           </div>
@@ -962,63 +1100,70 @@ export function Loans() {
       />
 
       {/* Delete Confirmation Modal */}
-      <Dialog open={isDeleteModalOpen} onOpenChange={(open) => !open && setIsDeleteModalOpen(false)}>
-        <DialogContent className="sm:max-w-106.25">
-          <DialogHeader>
-            <DialogTitle>Confirmar eliminación</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-muted rounded-full">
-                <AlertTriangle className="w-6 h-6 text-destructive" />
-              </div>
-              <div>
-                <p className="text-foreground font-medium">¿Estás seguro de eliminar este préstamo?</p>
-                <p className="text-sm text-muted-foreground">Esta acción es irreversible y afectará los saldos contables.</p>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" onClick={handleConfirmDelete}>
-              Eliminar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AlertDialog isOpen={isDeleteModalOpen} onOpenChange={(open) => !open && setIsDeleteModalOpen(false)}>
+        <AlertDialog.Backdrop>
+          <AlertDialog.Container className="sm:max-w-106.25">
+            <AlertDialog.Dialog>
+              <AlertDialog.Header>
+                <AlertDialog.Heading>Confirmar eliminación</AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body className="space-y-4 py-4">
+                <div className="flex items-center gap-3">
+                  <AlertDialog.Icon status="danger">
+                    <AlertTriangle className="w-6 h-6" />
+                  </AlertDialog.Icon>
+                  <div>
+                    <p className="text-foreground font-medium">¿Estás seguro de eliminar este préstamo?</p>
+                    <p className="text-sm text-muted-foreground">Esta acción es irreversible y afectará los saldos contables.</p>
+                  </div>
+                </div>
+              </AlertDialog.Body>
+              <AlertDialog.Footer>
+                <Button variant="outline" onPress={() => setIsDeleteModalOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button variant="danger" onPress={handleConfirmDelete}>
+                  Eliminar
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
+      </AlertDialog>
 
       {/* Modal de confirmación de anulación de pago */}
-      <Dialog open={isAnnulModalOpen} onOpenChange={(open) => { if (!open) { setIsAnnulModalOpen(false); setLoanToAnnul(null); } }}>
-        <DialogContent className="sm:max-w-106.25">
-          <DialogHeader>
-            <DialogTitle>Anular último pago</DialogTitle>
-          </DialogHeader>
-                <div className="space-y-4 py-4">
-            <div className="p-4 bg-muted rounded-lg">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-medium text-foreground">¿Anular el último pago?</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    El préstamo volverá al estado anterior y la caja se ajustará automáticamente.
-                  </p>
+      <AlertDialog isOpen={isAnnulModalOpen} onOpenChange={(open) => { if (!open) { setIsAnnulModalOpen(false); setLoanToAnnul(null); } }}>
+        <AlertDialog.Backdrop>
+          <AlertDialog.Container className="sm:max-w-106.25">
+            <AlertDialog.Dialog>
+              <AlertDialog.Header>
+                <AlertDialog.Heading>Anular último pago</AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body className="space-y-4 py-4">
+                <div className="p-4 rounded-[var(--radius)] border border-border bg-muted">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-foreground">¿Anular el último pago?</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        El préstamo volverá al estado anterior y la caja se ajustará automáticamente.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setIsAnnulModalOpen(false); setLoanToAnnul(null); }}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" onClick={handleConfirmAnnul}>
-              <Undo2 className="w-4 h-4 mr-2" />
-              Confirmar Anulación
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              </AlertDialog.Body>
+              <AlertDialog.Footer>
+                <Button variant="outline" onPress={() => { setIsAnnulModalOpen(false); setLoanToAnnul(null); }}>
+                  Cancelar
+                </Button>
+                <Button variant="danger" onPress={handleConfirmAnnul}>
+                  Confirmar Anulación
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
+      </AlertDialog>
     </div>
   );
 }

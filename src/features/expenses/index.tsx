@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '@/core/store/AppContext';
-import { Card, CardContent } from '@/shared/ui/card';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Textarea } from '@/shared/ui/textarea';
@@ -14,15 +13,19 @@ import {
 } from '@/shared/ui/select';
 import { FormModal, ConfirmModal } from '@/shared/components/custom-modal';
 import { DataTable, Column } from '@/shared/components/data-table';
+import { PageHeader } from '@/shared/components/PageHeader';
+import { StatCard } from '@/shared/components/StatCard';
+import { TableActionButton } from '@/shared/components/TableActionButton';
 import { formatCurrency, formatDate } from '@/core/lib/formatters';
 import { Expense, ExpenseFormData, ExpenseCategory } from '@/core/types';
-import { Plus, Trash2, FileText, DollarSign, Building, Wrench, Package, MoreHorizontal } from 'lucide-react';
+import { Plus, Trash2, Edit2, FileText, DollarSign, Building, Wrench, Package, MoreHorizontal } from 'lucide-react';
 import { DatePicker } from '@/shared/ui/date-picker';
+import { ListBox, Select as HeroSelect } from '@heroui/react';
 
 type CategoryFilter = 'all' | ExpenseCategory;
 
 export function Expenses() {
-  const { expenses, config, addExpense, deleteExpense, showToast } = useApp();
+  const { expenses, config, addExpense, updateExpense, deleteExpense, showToast } = useApp();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [showForm, setShowForm] = useState(false);
@@ -61,12 +64,20 @@ export function Expenses() {
     other: 'Otro',
   };
 
-  const categoryColors: Record<ExpenseCategory, { bg: string; icon: string }> = {
-    administrative: { bg: 'bg-orange-100', icon: 'text-orange-700' },
-    maintenance: { bg: 'bg-red-100', icon: 'text-red-700' },
-    services: { bg: 'bg-cyan-100', icon: 'text-cyan-700' },
-    supplies: { bg: 'bg-orange-100', icon: 'text-orange-700' },
-    other: { bg: 'bg-gray-100', icon: 'text-gray-700' },
+  const categoryTones: Record<ExpenseCategory, "primary" | "warning" | "danger" | "default"> = {
+    administrative: "warning",
+    maintenance: "danger",
+    services: "primary",
+    supplies: "warning",
+    other: "default",
+  };
+
+  const categoryStatIcons = {
+    administrative: FileText,
+    maintenance: Wrench,
+    services: Building,
+    supplies: Package,
+    other: MoreHorizontal,
   };
 
   // Totales
@@ -89,12 +100,11 @@ export function Expenses() {
   }, [expenses, categoryFilter, search]);
 
   // Filter pills data
-  const filterButtons: { label: string; value: CategoryFilter; amount: number }[] = [
-    { label: 'Todos', value: 'all', amount: totalExpenses },
+  const filterButtons: { label: string; value: CategoryFilter }[] = [
+    { label: 'Todos', value: 'all' },
     ...categoryOptions.map(c => ({
       label: c.label,
       value: c.value as CategoryFilter,
-      amount: totalsByCategory[c.value] || 0,
     })),
   ];
 
@@ -127,7 +137,8 @@ export function Expenses() {
       return;
     }
 
-    addExpense(formData);
+    if (selectedExpense) updateExpense(selectedExpense.id, formData);
+    else addExpense(formData);
     setShowForm(false);
   };
 
@@ -144,13 +155,12 @@ export function Expenses() {
       key: 'description',
       header: 'Descripción',
       sortable: true,
+      align: "left" as const,
       render: (expense: Expense) => (
-        <div className="flex items-center gap-3">
-          <div className={`p-2.5 rounded-lg ${categoryColors[expense.category].bg}`}>
-            <div className={categoryColors[expense.category].icon}>
-              {categoryIcons[expense.category]}
-            </div>
-          </div>
+        <div className="flex !justify-start items-center gap-3">
+          <span className="text-primary">
+            {categoryIcons[expense.category]}
+          </span>
           <div>
             <p className="font-medium text-foreground">{expense.description}</p>
             <p className="text-sm text-muted-foreground">{categoryLabels[expense.category]}</p>
@@ -187,84 +197,50 @@ export function Expenses() {
     {
       key: 'actions',
       header: 'Acciones',
-      width: '80px',
+      width: '100px',
       render: (expense: Expense) => (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 hover:text-destructive"
-          onClick={(e) => {
-            e.stopPropagation();
-            setSelectedExpense(expense);
-            setShowDelete(true);
-          }}
-          title="Eliminar"
-        >
-          <Trash2 className="w-4 h-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <TableActionButton label="Editar gasto" icon={Edit2} onPress={() => handleOpenForm(expense)} />
+          <TableActionButton label="Eliminar gasto" icon={Trash2} tone="danger" onPress={() => { setSelectedExpense(expense); setShowDelete(true); }} />
+        </div>
       ),
     },
   ];
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Título */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="p-2 rounded-full bg-rose-100">
-            <FileText className="w-6 h-6 text-rose-600" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Gastos</h1>
-            <p className="text-muted-foreground mt-1">Registro de gastos administrativos</p>
-          </div>
-        </div>
-        <Button onClick={() => handleOpenForm()}>
-          <Plus className="w-4 h-4 mr-2" />
-          Nuevo Gasto
-        </Button>
-      </div>
+      <PageHeader
+        title="Gastos"
+        description="Registro de gastos administrativos"
+        actions={
+          <Button onClick={() => handleOpenForm()}>
+            <Plus className="w-4 h-4 mr-2" />
+            Nuevo Gasto
+          </Button>
+        }
+      />
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <Card className="col-span-2 sm:col-span-3 lg:col-span-1">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Total</p>
-            <p className="text-lg font-bold text-destructive">
-              -{formatCurrency(totalExpenses, config.currencyCode)}
-            </p>
-          </CardContent>
-        </Card>
-        {categoryOptions.map((c) => (
-          <Card key={c.value}>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-1.5 mb-1">
-                <span className="text-muted-foreground">{categoryIcons[c.value as ExpenseCategory]}</span>
-                <p className="text-xs text-muted-foreground">{c.label}</p>
-              </div>
-              <p className="text-sm font-semibold text-foreground">
-                {formatCurrency(totalsByCategory[c.value] || 0, config.currencyCode)}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        <StatCard
+          className="col-span-2 sm:col-span-3 lg:col-span-1"
+          label="Total"
+          value={<>-{formatCurrency(totalExpenses, config.currencyCode)}</>}
+          icon={DollarSign}
+          tone="danger"
+        />
+        {categoryOptions.map((category) => {
+          const expenseCategory = category.value as ExpenseCategory;
 
-      {/* Filtros por categoría */}
-      <div className="flex flex-wrap items-center gap-1 bg-muted rounded-lg p-1">
-        {filterButtons.map((f) => (
-          <button
-            key={f.value}
-            onClick={() => setCategoryFilter(f.value)}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              categoryFilter === f.value
-                ? 'bg-black text-white dark:bg-white dark:text-black'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+          return (
+            <StatCard
+              key={category.value}
+              label={category.label}
+              value={formatCurrency(totalsByCategory[category.value] || 0, config.currencyCode)}
+              icon={categoryStatIcons[expenseCategory]}
+              tone={categoryTones[expenseCategory]}
+            />
+          );
+        })}
       </div>
 
       <DataTable
@@ -275,6 +251,29 @@ export function Expenses() {
         searchValue={search}
         onSearchChange={setSearch}
         searchPlaceholder="Buscar gastos..."
+        toolbar={(
+          <HeroSelect
+            className="w-full sm:w-60"
+            value={categoryFilter}
+            onChange={(value) => setCategoryFilter(value as CategoryFilter)}
+            aria-label="Filtrar gastos por categoría"
+          >
+            <HeroSelect.Trigger>
+              <HeroSelect.Value />
+              <HeroSelect.Indicator />
+            </HeroSelect.Trigger>
+            <HeroSelect.Popover>
+              <ListBox>
+                {filterButtons.map((filter) => (
+                  <ListBox.Item key={filter.value} id={filter.value} textValue={filter.label}>
+                    {filter.label}
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                ))}
+              </ListBox>
+            </HeroSelect.Popover>
+          </HeroSelect>
+        )}
         emptyMessage={
           categoryFilter !== 'all'
             ? `No hay gastos en ${categoryLabels[categoryFilter as ExpenseCategory]}`
@@ -292,26 +291,26 @@ export function Expenses() {
       >
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Descripción *</Label>
+            <Label>Descripción <span className="text-destructive" aria-hidden="true">*</span></Label>
             <div className="relative">
               <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Descripción del gasto"
+                placeholder="Compra de suministros de oficina"
                 className="pl-9"
               />
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Monto *</Label>
+            <Label>Monto <span className="text-destructive" aria-hidden="true">*</span></Label>
             <div className="relative">
               <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 type="number"
                 value={formData.amount || ''}
                 onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
-                placeholder="0.00"
+                placeholder="25.00"
                 className="pl-9"
               />
             </div>
@@ -334,19 +333,17 @@ export function Expenses() {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2">
-            <Label>Fecha</Label>
-            <DatePicker
-              value={formData.date}
-              onChange={(value) => setFormData({ ...formData, date: value })}
-            />
-          </div>
+          <DatePicker
+            label="Fecha"
+            value={formData.date}
+            onChange={(value) => setFormData({ ...formData, date: value })}
+          />
           <div className="space-y-2">
             <Label>Notas</Label>
             <Textarea
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              placeholder="Notas adicionales..."
+              placeholder="Factura 001-001-000123456"
               rows={3}
             />
           </div>

@@ -1,26 +1,28 @@
 import React from 'react';
+import { Switch } from '@heroui/react';
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard,
-  Users,
+  Activity,
+  BarChart3,
+  Building2,
   CreditCard,
   DollarSign,
   FileText,
-  Settings,
-  X,
-  Building2,
-  BarChart3,
-  Activity,
+  LayoutDashboard,
   Minus,
+  Moon,
   Plus,
   RotateCcw,
-  Moon,
-  Sun
+  Settings,
+  Sun,
+  Users,
+  X,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { Button } from '../ui/button';
 import { useApp } from '@/core/store/AppContext';
 import { useTheme } from '@/shared/components/theme-provider';
+import { WorkspaceSwitcher } from '@/shared/components/WorkspaceSwitcher';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -39,140 +41,139 @@ const navigation = [
   { name: 'Configuración', href: '/settings', icon: Settings },
 ];
 
-export function Sidebar({ isOpen, onClose, onOpen }: SidebarProps) {
+export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const { fontSize, setFontSize } = useApp();
   const { theme, setTheme } = useTheme();
 
-  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
-
   return (
     <>
-      {/* Mobile overlay */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+      {isOpen ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[1px] lg:hidden"
           onClick={onClose}
+          aria-label="Cerrar menú"
         />
-      )}
+      ) : null}
 
-      {/* Sidebar */}
       <aside
+        style={{ backgroundColor: '#13171f' }}
         className={cn(
-          `
-            fixed inset-y-0 left-0 z-50
-            w-64 bg-white dark:bg-[#1e293b]
-            text-foreground
-            border-r border-border dark:border-slate-800
-            transform transition-transform duration-300 ease-in-out
-            flex flex-col
-          `,
-          isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col coopmanager-sidebar border-r border-sidebar-border bg-[#13171f] text-sidebar-foreground transition-transform duration-300 ease-out',
+          isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
         )}
       >
-        {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-border">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-white dark:bg-transparent flex items-center justify-center">
-              <Building2 className="w-6 h-6 text-black dark:text-slate-300" />
-            </div>
-            <div>
-              <h1 className="font-bold text-slate-950 dark:text-white">CoopManager</h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Gestión Cooperativa</p>
+        <div className="flex h-[4.5rem] items-center justify-between border-b border-sidebar-border px-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Building2 className="size-5 shrink-0 text-sidebar-accent-foreground" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold tracking-[0.01em]">CoopManager</p>
+              <p className="mt-0.5 text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">
+                Gestión cooperativa
+              </p>
             </div>
           </div>
           <Button
             variant="ghost"
             size="icon"
             onClick={onClose}
-            className="lg:hidden text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/10"
+            className="lg:hidden text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            aria-label="Cerrar menú"
           >
-            <X className="w-5 h-5" />
+            <X aria-hidden="true" />
           </Button>
         </div>
+        <div className="border-b border-sidebar-border px-3 py-3">
+          <WorkspaceSwitcher />
+        </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navigation.map((item) => (
-            <NavLink
-              key={item.name}
-              to={item.href}
-              onClick={onClose}
-              className={({ isActive }) =>
-                cn(
-                  `
-                    flex items-center gap-3 px-4 py-3 rounded-lg
-                    font-medium transition-all duration-200
-                  `,
+
+        <nav className="flex-1 overflow-y-auto px-3 py-5" aria-label="Navegación principal">
+          <p className="px-2.5 pb-2.5 text-[0.625rem] font-semibold uppercase tracking-[0.15em] text-sidebar-foreground/45">
+            Inicio
+          </p>
+          <div className="flex flex-col gap-1">
+            {navigation.map((item) => (
+              <React.Fragment key={item.name}>
+                {item.href === '/members' ? <p className="px-2.5 pt-4 pb-2 text-[0.625rem] font-semibold uppercase tracking-[0.15em] text-sidebar-foreground/45">Gestión</p> : null}
+                {item.href === '/reports' ? <p className="px-2.5 pt-4 pb-2 text-[0.625rem] font-semibold uppercase tracking-[0.15em] text-sidebar-foreground/45">Consultas</p> : null}
+                {item.href === '/settings' ? <p className="px-2.5 pt-4 pb-2 text-[0.625rem] font-semibold uppercase tracking-[0.15em] text-sidebar-foreground/45">Sistema</p> : null}
+              <NavLink
+                to={item.href}
+                onClick={onClose}
+                className={({ isActive }) => cn(
+                  'group flex h-9 items-center gap-3 rounded-[var(--radius)] px-2.5 text-sm font-medium transition-colors',
                   isActive
-                    ? 'bg-blue-50 text-slate-900 dark:text-slate-900'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-muted/5 hover:text-slate-700 dark:hover:text-white'
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <item.icon
-                    className={cn(
-                      'w-5 h-5 transition-colors',
-                      isActive ? 'text-slate-900' : 'text-slate-600 dark:text-slate-300'
-                    )}
-                  />
-                  <span>{item.name}</span>
-                </>
-              )}
-            </NavLink>
-          ))}
+                    ? 'bg-[#2e63eb] font-semibold text-white shadow-sm'
+                    : 'text-sidebar-foreground/65 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
+                )}
+              >
+                {({ isActive }) => (
+                  <>
+                    <item.icon
+                      className={cn(
+                        'size-4 shrink-0 transition-transform duration-200 group-hover:scale-105',
+                        isActive ? 'text-white' : 'text-sidebar-foreground/55',
+                      )}
+                      aria-hidden="true"
+                    />
+                    <span>{item.name}</span>
+                  </>
+                )}
+              </NavLink>
+              </React.Fragment>
+            ))}
+          </div>
         </nav>
 
-        {/* Bottom controls: font size + theme */}
-        <div className="p-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
-          {/* Font size */}
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-slate-600 dark:text-slate-200 hover:text-slate-800 dark:hover:text-white hover:bg-muted/10"
+        <div className="space-y-2 border-t border-sidebar-border p-3">
+          <div className="flex h-9 items-center gap-1 rounded-[var(--radius)] border border-sidebar-border bg-sidebar-accent/25 p-1">
+            <button
+              type="button"
+              className="grid size-7 shrink-0 place-items-center rounded-[calc(var(--radius)-2px)] text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:cursor-not-allowed disabled:opacity-35"
               onClick={() => fontSize.base > fontSize.min && setFontSize(fontSize.base - fontSize.step)}
               disabled={fontSize.base <= fontSize.min}
-              title="Reducir fuente"
+              aria-label="Reducir tamaño de fuente"
             >
-              <Minus className="w-4 h-4" />
-            </Button>
-            <span className="flex-1 text-center text-xs text-slate-600 select-none">
+              <Minus className="size-3.5" aria-hidden="true" />
+            </button>
+            <span className="flex-1 text-center text-[0.6875rem] font-semibold tabular-nums text-sidebar-foreground/75">
               {(fontSize.base * 100).toFixed(0)}%
             </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-slate-600 dark:text-slate-200 hover:text-slate-800 dark:hover:text-white hover:bg-muted/10"
+            <button
+              type="button"
+              className="grid size-7 shrink-0 place-items-center rounded-[calc(var(--radius)-2px)] text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:cursor-not-allowed disabled:opacity-35"
               onClick={() => fontSize.base < fontSize.max && setFontSize(fontSize.base + fontSize.step)}
               disabled={fontSize.base >= fontSize.max}
-              title="Aumentar fuente"
+              aria-label="Aumentar tamaño de fuente"
             >
-              <Plus className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-slate-600 dark:text-slate-200 hover:text-slate-800 dark:hover:text-white hover:bg-muted/10"
+              <Plus className="size-3.5" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="grid size-7 shrink-0 place-items-center rounded-[calc(var(--radius)-2px)] text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               onClick={() => setFontSize(1)}
-              title="Restaurar fuente"
+              aria-label="Restaurar tamaño de fuente"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </Button>
+              <RotateCcw className="size-3.5" aria-hidden="true" />
+            </button>
           </div>
 
-          {/* Theme toggle */}
-          <Button
-            variant="ghost"
-            className="w-full justify-start gap-3 px-4 py-3 text-slate-600 dark:text-slate-200 hover:text-slate-800 dark:hover:text-white hover:bg-muted/10"
-            onClick={toggleTheme}
+          <Switch
+            isSelected={theme === "dark"}
+            onChange={(isDark) => setTheme(isDark ? "dark" : "light")}
+            size="sm"
+            className="w-full px-2.5 text-sidebar-foreground"
           >
-            {theme === 'dark' ? <Sun className="w-5 h-5 text-slate-600 dark:text-slate-200" /> : <Moon className="w-5 h-5 text-slate-600 dark:text-slate-200" />}
-            <span>{theme === 'dark' ? 'Modo Claro' : 'Modo Oscuro'}</span>
-          </Button>
+            <Switch.Content className="flex w-full items-center justify-between gap-2.5">
+              <span className="flex items-center gap-2.5 text-sm text-sidebar-foreground">
+                {theme === "dark" ? <Moon className="size-4" aria-hidden="true" /> : <Sun className="size-4" aria-hidden="true" />}
+                Tema oscuro
+              </span>
+              <Switch.Control><Switch.Thumb /></Switch.Control>
+            </Switch.Content>
+          </Switch>
         </div>
-
       </aside>
     </>
   );

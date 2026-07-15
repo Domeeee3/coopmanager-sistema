@@ -4,6 +4,7 @@ import {
   MemberFormData, LoanFormData, ContributionFormData, ExpenseFormData,
   Refund, RefundFormData, ActivityLog, ActivityType
 } from '../types';
+import type { Workspace, WorkspaceIconName } from '../lib/workspaces';
 
 // ==================== ACTIONS ====================
 export type Action =
@@ -17,7 +18,6 @@ export type Action =
   | { type: 'SET_MEMBERS'; payload: Member[] }
   | { type: 'ADD_MEMBER'; payload: Member }
   | { type: 'UPDATE_MEMBER'; payload: Member }
-  | { type: 'DELETE_MEMBER'; payload: string }
   | { type: 'SET_LOANS'; payload: Loan[] }
   | { type: 'ADD_LOAN'; payload: Loan }
   | { type: 'UPDATE_LOAN'; payload: Loan }
@@ -39,6 +39,7 @@ export type Action =
   | { type: 'ADJUST_CASHBOX'; payload: number }
   | { type: 'ADD_ACTIVITY'; payload: ActivityLog }
   | { type: 'SET_ACTIVITIES'; payload: ActivityLog[] }
+  | { type: 'LOAD_WORKSPACE'; payload: Partial<AppState> }
   | { type: 'CLEAR_ALL_DATA' };
 
 // ==================== STATE ====================
@@ -102,6 +103,11 @@ export const initialState: AppState = {
   cashbox: 0,
 };
 
+export interface MemberUpdateOptions {
+  notify?: boolean;
+  logActivity?: boolean;
+}
+
 // ==================== CONTEXT VALUE ====================
 export interface AppContextValue extends AppState {
   // Configuración
@@ -112,16 +118,24 @@ export interface AppContextValue extends AppState {
 
   // Toasts
   showToast: (type: Toast['type'], title: string, message?: string) => void;
+  // Workspaces
+  workspaces: Workspace[];
+  activeWorkspace: Workspace | null;
+  createWorkspace: (name: string, icon?: WorkspaceIconName) => Promise<void>;
+  renameWorkspace: (workspaceId: string, name: string) => Promise<void>;
+  deleteWorkspace: (workspaceId: string) => Promise<void>;
+  switchWorkspace: (workspaceId: string) => Promise<void>;
+
+  updateWorkspaceIcon: (workspaceId: string, icon: WorkspaceIconName) => Promise<void>;
   removeToast: (id: string) => void;
 
   // Socios
   addMember: (data: MemberFormData) => Member;
-  updateMember: (id: string, data: Partial<Member>) => void;
-  deleteMember: (id: string) => void;
+  updateMember: (id: string, data: Partial<Member>, options?: MemberUpdateOptions) => void;
   getMember: (id: string) => Member | undefined;
 
   // Préstamos
-  addLoan: (data: LoanFormData) => Loan;
+  addLoan: (data: LoanFormData, options?: { notify?: boolean }) => Loan;
   updateLoan: (id: string, data: Partial<Loan>) => void;
   getLoan: (id: string) => Loan | undefined;
   deleteLoan: (loanId: string) => void;
@@ -139,6 +153,7 @@ export interface AppContextValue extends AppState {
 
   // Gastos
   addExpense: (data: ExpenseFormData) => Expense;
+  updateExpense: (id: string, data: ExpenseFormData) => void;
   deleteExpense: (id: string) => void;
 
   // Devoluciones
@@ -157,8 +172,8 @@ export interface AppContextValue extends AppState {
   getMemberLoans: (memberId: string) => Loan[];
   performAnnualClosing: () => void;
   getAvailableYears: () => number[];
-  exportData: () => void;
-  importData: (jsonData: string) => void;
+  exportData: () => Promise<void>;
+  importData: (fileBuffer: ArrayBuffer) => Promise<void>;
   exportToCSV: () => void;
 }
 

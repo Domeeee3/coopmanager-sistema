@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/shared/ui/tabs';
+import { useState } from 'react';
+import { PageHeader } from '@/shared/components/PageHeader';
+import { SectionTabs } from '@/shared/components/SectionTabs';
 import { Users, ArrowLeftCircle } from 'lucide-react';
 
 import { MembersTab } from './MembersTab';
@@ -12,38 +13,22 @@ export function Members() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Título */}
-      <div className="flex items-center gap-2">
-        <div className="p-2 rounded-full bg-blue-100">
-          <Users className="w-6 h-6 text-blue-600" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Socios</h1>
-          <p className="text-muted-foreground mt-1">Gestión de miembros de la cooperativa</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Socios"
+        description="Gestión de miembros de la cooperativa"
+      />
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabType)}>
-        <TabsList>
-          <TabsTrigger value="members">
-            <Users className="w-4 h-4 mr-1.5" />
-            Socios
-          </TabsTrigger>
-          <TabsTrigger value="refunds">
-            <ArrowLeftCircle className="w-4 h-4 mr-1.5" />
-            Devoluciones
-          </TabsTrigger>
-        </TabsList>
+      <SectionTabs
+        ariaLabel="Secciones de socios"
+        selectedKey={activeTab}
+        onSelectionChange={(key) => setActiveTab(key as TabType)}
+        tabs={[
+          { id: 'members', label: 'Socios', icon: <Users className="size-4" /> },
+          { id: 'refunds', label: 'Devoluciones', icon: <ArrowLeftCircle className="size-4" /> },
+        ]}
+      />
 
-        <TabsContent value="members">
-          <MembersTab />
-        </TabsContent>
-
-        <TabsContent value="refunds">
-          <RefundsTab />
-        </TabsContent>
-      </Tabs>
+      {activeTab === 'members' ? <MembersTab /> : <RefundsTab />}
     </div>
   );
 }

@@ -1,13 +1,5 @@
 import React from 'react';
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogFooter,
-    DialogDescription,
-} from '../ui/dialog';
-import { Button } from '../ui/button';
+import { Button, Modal } from '@heroui/react';
 
 interface FormModalProps {
     isOpen: boolean;
@@ -29,26 +21,31 @@ export function FormModal({
     children,
 }: FormModalProps) {
     return (
-        <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className={className || 'sm:max-w-[425px]'}>
-                <DialogHeader>
-                    <DialogTitle>{title}</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={(e) => { e.preventDefault(); onSubmit(e); }}>
-                    <div className="py-4 space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-                        {children}
-                    </div>
-                    <DialogFooter>
-                        <Button type="button" variant="outline" onClick={onClose}>
-                            Cancelar
-                        </Button>
-                        <Button type="submit">
-                            {submitText}
-                        </Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
-        </Dialog>
+        <Modal isOpen={isOpen} onOpenChange={(open) => !open && onClose()}>
+            <Modal.Backdrop variant="blur">
+                <Modal.Container scroll="inside" className={className ?? 'sm:max-w-md'}>
+                    <Modal.Dialog>
+                        <form onSubmit={(e) => { e.preventDefault(); onSubmit(e); }}>
+                            <Modal.Header>
+                                <Modal.Heading>{title}</Modal.Heading>
+                                <Modal.CloseTrigger aria-label="Cerrar formulario" />
+                            </Modal.Header>
+                            <Modal.Body className="space-y-4">
+                                {children}
+                            </Modal.Body>
+                            <Modal.Footer className="gap-3">
+                                <Button type="button" variant="outline" onPress={onClose}>
+                                    Cancelar
+                                </Button>
+                                <Button type="submit">
+                                    {submitText}
+                                </Button>
+                            </Modal.Footer>
+                        </form>
+                    </Modal.Dialog>
+                </Modal.Container>
+            </Modal.Backdrop>
+        </Modal>
     );
 }
 
@@ -71,31 +68,38 @@ export function ConfirmModal({
     confirmText = 'Confirmar',
     variant = 'primary',
 }: ConfirmModalProps) {
+    const confirmVariant = variant === 'danger' || variant === 'destructive' ? 'danger' : 'primary';
+
     return (
-        <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                    <DialogTitle>{title}</DialogTitle>
-                    <DialogDescription>
-                        {message}
-                    </DialogDescription>
-                </DialogHeader>
-                <DialogFooter className="mt-6">
-                    <Button type="button" variant="outline" onClick={onClose}>
-                        Cancelar
-                    </Button>
-                    <Button
-                        type="button"
-                        variant={variant === 'danger' || variant === 'destructive' ? 'destructive' : 'default'}
-                        onClick={() => {
-                            onConfirm();
-                            onClose();
-                        }}
-                    >
-                        {confirmText}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+        <Modal isOpen={isOpen} onOpenChange={(open) => !open && onClose()}>
+            <Modal.Backdrop variant="blur">
+                <Modal.Container size="sm">
+                    <Modal.Dialog>
+                        <Modal.Header>
+                            <Modal.Heading>{title}</Modal.Heading>
+                            <Modal.CloseTrigger aria-label="Cerrar confirmación" />
+                        </Modal.Header>
+                        <Modal.Body>
+                            <p>{message}</p>
+                        </Modal.Body>
+                        <Modal.Footer className="gap-3">
+                            <Button type="button" variant="outline" onPress={onClose}>
+                                Cancelar
+                            </Button>
+                            <Button
+                                type="button"
+                                variant={confirmVariant}
+                                onPress={() => {
+                                    onConfirm();
+                                    onClose();
+                                }}
+                            >
+                                {confirmText}
+                            </Button>
+                        </Modal.Footer>
+                    </Modal.Dialog>
+                </Modal.Container>
+            </Modal.Backdrop>
+        </Modal>
     );
 }

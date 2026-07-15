@@ -1,18 +1,17 @@
 import React, { useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/core/store/AppContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
-import { Alert, AlertTitle, AlertDescription } from '@/shared/ui/alert';
-import { Button } from '@/shared/ui/button';
+import { Alert, Button, Card, CardContent, CardHeader, CardTitle } from '@heroui/react';
 import { formatCurrency, formatPercentage } from '@/core/lib/formatters';
+import { PageHeader } from '@/shared/components/PageHeader';
+import { StatCard } from '@/shared/components/StatCard';
 import {
   Users,
   CreditCard,
-  DollarSign,
-  TrendingUp,
-  TrendingDown,
   Wallet,
   PiggyBank,
-  AlertTriangle
+  AlertTriangle,
+  Percent
 } from 'lucide-react';
 import {
   AreaChart,
@@ -29,6 +28,7 @@ import {
 } from 'recharts';
 
 export function Dashboard() {
+  const navigate = useNavigate();
   const {
     members,
     loans,
@@ -37,8 +37,7 @@ export function Dashboard() {
     transactions,
     refunds,
     calculateAvailableCash,
-    config,
-    payRetention
+    config
   } = useApp();
 
   // Calcular estadísticas
@@ -151,8 +150,6 @@ export function Dashboard() {
       getCSSVar('--chart-3'),
       getCSSVar('--chart-4'),
     ];
-    // replace default grey slice with vibrant purple
-    if (arr.length > 0) arr[0] = '#8b5cf6';
     return arr;
   }, [getCSSVar]);
 
@@ -164,148 +161,101 @@ export function Dashboard() {
   const borderColor = useMemo(() => getCSSVar('--border'), [getCSSVar]);
   const foregroundColor = useMemo(() => getCSSVar('--foreground'), [getCSSVar]);
 
-  // Tarjetas de estadísticas
-  const statCards = [
-    {
-      title: 'Caja Disponible',
-      value: stats.availableCash,
-      icon: Wallet,
-      iconBg: 'bg-blue-100',
-      iconColor: 'text-blue-600',
-      trend: stats.availableCash >= 0 ? 'up' : 'down',
-      alert: stats.availableCash < 0,
-    },
-    {
-      title: 'Total Socios',
-      value: stats.activeMembers,
-      subtitle: `${stats.totalMembers} total`,
-      icon: Users,
-      iconBg: 'bg-emerald-100',
-      iconColor: 'text-emerald-600',
-    },
-    {
-      title: 'Préstamos Activos',
-      value: stats.activeLoans,
-      subtitle: formatCurrency(stats.totalLoaned),
-      icon: CreditCard,
-      iconBg: 'bg-amber-100',
-      iconColor: 'text-amber-600',
-    },
-    {
-      title: 'Aportes Totales',
-      value: stats.totalContributions,
-      subtitle: `${formatCurrency(stats.totalPenalties)} en multas recaudadas`,
-      icon: PiggyBank,
-      iconBg: 'bg-purple-100',
-      iconColor: 'text-purple-600',
-    },
-  ];
-
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Título */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Dashboard
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Resumen general de la cooperativa
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Dashboard"
+        description="Resumen general de la cooperativa"
+      />
 
       {/* Alerta de caja negativa */}
       {stats.availableCash < 0 && (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Caja Negativa</AlertTitle>
-          <AlertDescription>
-            La caja disponible es de {formatCurrency(stats.availableCash)}. No se recomienda aprobar nuevos préstamos hasta normalizar la situación.
-          </AlertDescription>
+        <Alert status="danger" role="alert">
+          <Alert.Indicator>
+            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+          </Alert.Indicator>
+          <Alert.Content>
+            <Alert.Title>Caja Negativa</Alert.Title>
+            <Alert.Description>
+              La caja disponible es de {formatCurrency(stats.availableCash)}. No se recomienda aprobar nuevos préstamos hasta normalizar la situación.
+            </Alert.Description>
+          </Alert.Content>
         </Alert>
       )}
 
-      {/* Alerta de retenciones pendientes */}
+      {/* Retenciones pendientes */}
       {stats.pendingRetentions.length > 0 && (
-        <Alert>
-          <DollarSign className="h-4 w-4" />
-          <AlertTitle>Retenciones Pendientes ({stats.pendingRetentions.length})</AlertTitle>
-          <AlertDescription>
-            <p className="mb-3">Total por cobrar: {formatCurrency(stats.totalRetentionsPending)}</p>
+        <Card className="border border-border bg-card shadow-none" role="status" aria-live="polite">
+          <CardContent className="space-y-4 p-5">
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                Retenciones Pendientes ({stats.pendingRetentions.length})
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Total por cobrar: <span className="font-medium text-foreground">{formatCurrency(stats.totalRetentionsPending)}</span>
+              </p>
+            </div>
             <div className="space-y-2">
               {stats.pendingRetentions.map(loan => (
-                <div key={loan.id} className="flex items-center justify-between p-3 rounded-lg border border-border">
+                <div key={loan.id} className="flex items-center justify-between gap-3 rounded-[var(--radius)] border border-border p-3">
                   <div>
                     <p className="font-medium text-foreground">{loan.memberName}</p>
                     <p className="text-sm text-muted-foreground">
                       Préstamo de {formatCurrency(loan.amount)} — Retención: {formatCurrency(loan.retentionAmount)}
                     </p>
                   </div>
-                  <Button size="sm" onClick={() => payRetention(loan.id)}>
+                  <Button size="sm" onPress={() => navigate('/loans')}>
                     Cobrar
                   </Button>
                 </div>
               ))}
             </div>
-          </AlertDescription>
-        </Alert>
+          </CardContent>
+        </Card>
       )}
 
       {/* Tarjetas de estadísticas */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {statCards.map((stat, index) => (
-          <Card key={index} className="shadow-sm border border-slate-100 bg-white">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className={`${stat.iconBg} p-2.5 rounded-lg`}> 
-                  <stat.icon className={`w-5 h-5 ${stat.iconColor}`} />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    {stat.title}
-                  </p>
-                  <p className="text-2xl font-bold text-foreground">
-                    {typeof stat.value === 'number'
-                      ? (stat.title.includes('Caja') || stat.title.includes('Aportes')
-                        ? formatCurrency(stat.value)
-                        : stat.value.toLocaleString())
-                      : stat.value}
-                  </p>
-                  {stat.subtitle && (
-                    <p className="text-xs text-slate-500">
-                      {stat.subtitle}
-                    </p>
-                  )}
-                  {stat.trend && (
-                    <div className="flex items-center gap-1 pt-1">
-                      {stat.trend === 'up' ? (
-                        <TrendingUp className="w-4 h-4 text-success" />
-                      ) : (
-                        <TrendingDown className="w-4 h-4 text-destructive" />
-                      )}
-                      <span className={`text-xs font-medium ${stat.trend === 'up' ? 'text-success' : 'text-destructive'}`}>
-                        {stat.trend === 'up' ? 'Positivo' : 'Negativo'}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <StatCard
+          label="Caja Disponible"
+          value={formatCurrency(stats.availableCash)}
+          description={stats.availableCash >= 0 ? "Positivo" : "Negativo"}
+          icon={Wallet}
+          tone={stats.availableCash >= 0 ? "success" : "danger"}
+        />
+        <StatCard
+          label="Total Socios"
+          value={stats.activeMembers.toLocaleString()}
+          description={stats.totalMembers.toLocaleString() + " total"}
+          icon={Users}
+          tone="primary"
+        />
+        <StatCard
+          label="Préstamos Activos"
+          value={stats.activeLoans.toLocaleString()}
+          description={formatCurrency(stats.totalLoaned)}
+          icon={CreditCard}
+          tone="primary"
+        />
+        <StatCard
+          label="Aportes Totales"
+          value={formatCurrency(stats.totalContributions)}
+          description={formatCurrency(stats.totalPenalties) + " en multas recaudadas"}
+          icon={PiggyBank}
+          tone="primary"
+        />
       </div>
 
       {/* Gráficos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Flujo de caja */}
-        <Card>
-          <CardHeader>
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-border">
             <CardTitle>Flujo de Caja</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             {cashFlowData.length > 0 ? (
-              <div className="h-72">
+              <div className="h-72" role="img" aria-label="Gráfico de flujo de caja">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={cashFlowData}>
                     <defs>
@@ -359,7 +309,7 @@ export function Dashboard() {
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="h-72 flex items-center justify-center text-muted-foreground">
+              <div className="flex h-72 items-center justify-center text-muted-foreground">
                 No hay transacciones registradas
               </div>
             )}
@@ -367,13 +317,13 @@ export function Dashboard() {
         </Card>
 
         {/* Distribución de préstamos */}
-        <Card>
-          <CardHeader>
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-border">
             <CardTitle>Distribución de Préstamos</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             {loanDistribution.length > 0 ? (
-              <div className="h-72 flex items-center">
+              <div className="flex h-72 items-center" role="img" aria-label="Gráfico de distribución de préstamos">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -403,7 +353,7 @@ export function Dashboard() {
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="h-72 flex items-center justify-center text-muted-foreground">
+              <div className="flex h-72 items-center justify-center text-muted-foreground">
                 No hay préstamos registrados
               </div>
             )}
@@ -412,42 +362,30 @@ export function Dashboard() {
       </div>
 
       {/* Indicadores de morosidad */}
-      <Card>
-        <CardHeader>
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b border-border">
           <CardTitle>Indicadores de Morosidad</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Card className="shadow-sm border border-slate-100 bg-white dark:bg-slate-800">
-              <CardContent className="pt-6 text-center text-slate-900 dark:text-white">
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
-                  Tasa de Morosidad
-                </p>
-                <p className={`text-3xl font-bold ${stats.delinquencyRate > 10 ? 'text-destructive' : ''}`}>
-                  {formatPercentage(stats.delinquencyRate)}
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="shadow-sm border border-slate-100 bg-white dark:bg-slate-800">
-              <CardContent className="pt-6 text-center text-slate-900 dark:text-white">
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
-                  Préstamos Activos
-                </p>
-                <p className="text-3xl font-bold">
-                  {stats.activeLoans}
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="shadow-sm border border-slate-100 bg-white dark:bg-slate-800">
-              <CardContent className="pt-6 text-center text-slate-900 dark:text-white">
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
-                  Préstamos en Mora
-                </p>
-                <p className={`text-3xl font-bold ${stats.lateLoans > 0 ? 'text-rose-600' : ''}`}>
-                  {stats.lateLoans}
-                </p>
-              </CardContent>
-            </Card>
+        <CardContent className="pt-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <StatCard
+              label="Tasa de Morosidad"
+              value={formatPercentage(stats.delinquencyRate)}
+              icon={Percent}
+              tone="default"
+            />
+            <StatCard
+              label="Préstamos Activos"
+              value={stats.activeLoans}
+              icon={CreditCard}
+              tone="default"
+            />
+            <StatCard
+              label="Préstamos en Mora"
+              value={stats.lateLoans}
+              icon={AlertTriangle}
+              tone="default"
+            />
           </div>
         </CardContent>
       </Card>

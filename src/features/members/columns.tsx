@@ -1,12 +1,9 @@
-import React from 'react';
-import { Button } from '@/shared/ui/button';
-import { StatusBadge } from '@/shared/components/status-badge';
+import { Button, Chip } from '@heroui/react';
 import { formatCurrency, formatDate } from '@/core/lib/formatters';
 import { Column } from '@/shared/components/data-table';
 import { Member, Refund, Contribution } from '@/core/types';
-import { User, Edit2, Trash2, UserX, ArrowLeftCircle } from 'lucide-react';
-
-// ── Helpers de cálculo (memoizables por el consumidor) ──
+import { MemberAvatar } from '@/shared/components/MemberAvatar';
+import { Edit2, Trash2, UserCheck, UserX } from 'lucide-react';
 
 export function calcNetContributions(
   member: Member,
@@ -14,11 +11,11 @@ export function calcNetContributions(
   refunds: Refund[]
 ): number {
   const totalPaid = contributions
-    .filter(c => c.memberId === member.id && c.status === 'paid')
-    .reduce((s, c) => s + (Number(c.shareAmount || 0) + Number(c.expenseAmount || 0)), 0);
+    .filter(contribution => contribution.memberId === member.id && contribution.status === 'paid')
+    .reduce((sum, contribution) => sum + (Number(contribution.shareAmount || 0) + Number(contribution.expenseAmount || 0)), 0);
   const totalRefunded = refunds
-    .filter(r => r.memberId === member.id)
-    .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    .filter(refund => refund.memberId === member.id)
+    .reduce((sum, refund) => sum + (Number(refund.amount) || 0), 0);
   return Math.max(0, totalPaid - totalRefunded);
 }
 
@@ -27,11 +24,9 @@ export function calcTotalPenalties(
   contributions: Contribution[]
 ): number {
   return contributions
-    .filter(c => c.memberId === member.id && c.status === 'paid')
-    .reduce((s, c) => s + (Number(c.penaltyAmount) || 0), 0);
+    .filter(contribution => contribution.memberId === member.id && contribution.status === 'paid')
+    .reduce((sum, contribution) => sum + (Number(contribution.penaltyAmount) || 0), 0);
 }
-
-// ── Columnas base de socios (sin acciones) ──
 
 interface MemberColumnDeps {
   contributions: Contribution[];
@@ -41,19 +36,19 @@ interface MemberColumnDeps {
 
 export function getMemberBaseColumns(deps: MemberColumnDeps): Column<Member>[] {
   const { contributions, refunds, currencyCode } = deps;
+
   return [
     {
       key: 'name',
       header: 'Nombre',
       sortable: true,
+      align: "left" as const,
       render: (member) => (
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-            <User className="w-4 h-4 text-muted-foreground" />
-          </div>
+        <div className="flex !justify-start items-center gap-3">
+          <MemberAvatar name={member.name} photo={member.profilePhoto} />
           <div>
             <p className="font-medium text-foreground">{member.name}</p>
-            <p className="text-sm text-muted-foreground">{member.phone}</p>
+            <p className="text-sm text-muted-foreground">{member.phone || 'Sin teléfono'}</p>
           </div>
         </div>
       ),
@@ -65,13 +60,13 @@ export function getMemberBaseColumns(deps: MemberColumnDeps): Column<Member>[] {
     },
     {
       key: 'joinDate',
-      header: 'Fecha Ingreso',
+      header: 'Fecha de ingreso',
       sortable: true,
       render: (member) => formatDate(member.joinDate),
     },
     {
       key: 'totalContributions',
-      header: 'Total Aportes',
+      header: 'Total aportes',
       sortable: true,
       align: 'right' as const,
       render: (member) => formatCurrency(calcNetContributions(member, contributions, refunds), currencyCode),
@@ -86,17 +81,19 @@ export function getMemberBaseColumns(deps: MemberColumnDeps): Column<Member>[] {
     {
       key: 'status',
       header: 'Estado',
-      render: (member) => <StatusBadge status={member.status} />,
+      render: (member) => (
+        <Chip color={member.status === 'active' ? 'success' : 'default'} size="sm" variant="soft">
+          {member.status === 'active' ? 'Activo' : 'Retirado'}
+        </Chip>
+      ),
     },
   ];
 }
 
-// ── Columna de acciones unificada (activos + inactivos) ──
-
 interface UnifiedActionsDeps {
-  onEdit: (m: Member) => void;
-  onInactivate: (m: Member) => void;
-  onDelete: (m: Member) => void;
+  onEdit: (member: Member) => void;
+  onInactivate: (member: Member) => void;
+  onRestore: (member: Member) => void;
 }
 
 export function getUnifiedActionsColumn(deps: UnifiedActionsDeps): Column<Member> {
@@ -108,17 +105,36 @@ export function getUnifiedActionsColumn(deps: UnifiedActionsDeps): Column<Member
       <div className="flex items-center gap-1">
         {member.status === 'active' && (
           <>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); deps.onEdit(member); }} title="Editar">
-              <Edit2 className="w-4 h-4" />
+            <Button
+              isIconOnly
+              size="sm"
+              variant="ghost"
+              aria-label={`Editar a ${member.name}`}
+              onClick={(event) => { event.stopPropagation(); deps.onEdit(member); }}
+            >
+              <Edit2 className="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); deps.onInactivate(member); }} title="Retirar socio">
-              <UserX className="w-4 h-4" />
+            <Button
+              isIconOnly
+              size="sm"
+              variant="ghost"
+              aria-label={`Retirar a ${member.name}`}
+              onClick={(event) => { event.stopPropagation(); deps.onInactivate(member); }}
+            >
+              <UserX className="size-4" />
             </Button>
           </>
         )}
         {member.status === 'inactive' && (
-          <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-destructive" onClick={(e) => { e.stopPropagation(); deps.onDelete(member); }} title="Eliminar">
-            <Trash2 className="w-4 h-4" />
+          <Button
+            isIconOnly
+            size="sm"
+            variant="ghost"
+
+            aria-label={`Restablecer a ${member.name}`}
+            onClick={(event) => { event.stopPropagation(); deps.onRestore(member); }}
+          >
+            <UserCheck className="size-4" />
           </Button>
         )}
       </div>
@@ -126,11 +142,9 @@ export function getUnifiedActionsColumn(deps: UnifiedActionsDeps): Column<Member
   };
 }
 
-// ── Columnas legacy (mantenidas por compatibilidad) ──
-
 interface ActiveActionsDeps {
-  onEdit: (m: Member) => void;
-  onInactivate: (m: Member) => void;
+  onEdit: (member: Member) => void;
+  onInactivate: (member: Member) => void;
 }
 
 export function getActiveActionsColumn(deps: ActiveActionsDeps): Column<Member> {
@@ -140,12 +154,24 @@ export function getActiveActionsColumn(deps: ActiveActionsDeps): Column<Member> 
     width: '80px',
     render: (member) => (
       <div className="flex items-center gap-1">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); deps.onEdit(member); }} title="Editar">
-          <Edit2 className="w-4 h-4" />
+        <Button
+          isIconOnly
+          size="sm"
+          variant="ghost"
+          aria-label={`Editar a ${member.name}`}
+          onClick={(event) => { event.stopPropagation(); deps.onEdit(member); }}
+        >
+          <Edit2 className="size-4" />
         </Button>
         {member.status === 'active' && (
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); deps.onInactivate(member); }} title="Marcar como inactivo">
-            <UserX className="w-4 h-4" />
+          <Button
+            isIconOnly
+            size="sm"
+            variant="ghost"
+            aria-label={`Marcar a ${member.name} como inactivo`}
+            onClick={(event) => { event.stopPropagation(); deps.onInactivate(member); }}
+          >
+            <UserX className="size-4" />
           </Button>
         )}
       </div>
@@ -154,7 +180,7 @@ export function getActiveActionsColumn(deps: ActiveActionsDeps): Column<Member> 
 }
 
 interface InactiveActionsDeps {
-  onDelete: (m: Member) => void;
+  onRestore: (member: Member) => void;
 }
 
 export function getInactiveActionsColumn(deps: InactiveActionsDeps): Column<Member> {
@@ -163,19 +189,24 @@ export function getInactiveActionsColumn(deps: InactiveActionsDeps): Column<Memb
     header: 'Acciones',
     width: '80px',
     render: (member) => (
-      <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-destructive" onClick={(e) => { e.stopPropagation(); deps.onDelete(member); }} title="Eliminar">
-        <Trash2 className="w-4 h-4" />
+      <Button
+        isIconOnly
+        size="sm"
+        variant="ghost"
+        aria-label={`Restablecer a ${member.name}`}
+        onClick={(event) => { event.stopPropagation(); deps.onRestore(member); }}
+      >
+        <UserCheck className="size-4" />
       </Button>
     ),
   };
 }
 
-// ── Columnas de devoluciones ──
-
 interface RefundColumnDeps {
   currencyCode: string;
-  onEdit: (r: Refund) => void;
-  onDelete: (r: Refund) => void;
+  members: Member[];
+  onEdit: (refund: Refund) => void;
+  onDelete: (refund: Refund) => void;
 }
 
 export function getRefundColumns(deps: RefundColumnDeps): Column<Refund>[] {
@@ -183,14 +214,16 @@ export function getRefundColumns(deps: RefundColumnDeps): Column<Refund>[] {
     {
       key: 'member',
       header: 'Socio',
-      render: (refund) => (
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-            <ArrowLeftCircle className="w-4 h-4 text-muted-foreground" />
+      align: 'left' as const,
+      render: (refund) => {
+        const member = deps.members.find((item) => item.id === refund.memberId);
+        return (
+          <div className="flex !justify-start items-center gap-3">
+            <MemberAvatar name={refund.memberName} photo={member?.profilePhoto} />
+            <span className="font-medium text-foreground">{refund.memberName}</span>
           </div>
-          <span className="font-medium text-foreground">{refund.memberName}</span>
-        </div>
-      ),
+        );
+      },
     },
     {
       key: 'reason',
@@ -202,14 +235,14 @@ export function getRefundColumns(deps: RefundColumnDeps): Column<Refund>[] {
       header: 'Devolución',
       align: 'right' as const,
       render: (refund) => (
-        <span className="font-semibold text-foreground">
+        <span className="text-foreground">
           {formatCurrency(refund.amount, deps.currencyCode)}
         </span>
       ),
     },
     {
       key: 'depositDate',
-      header: 'Fecha Depósito',
+      header: 'Fecha de depósito',
       render: (refund) => formatDate(refund.depositDate),
     },
     {
@@ -218,11 +251,24 @@ export function getRefundColumns(deps: RefundColumnDeps): Column<Refund>[] {
       width: '120px',
       render: (refund) => (
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); deps.onEdit(refund); }} title="Editar">
-            <Edit2 className="w-4 h-4" />
+          <Button
+            isIconOnly
+            size="sm"
+            variant="ghost"
+            aria-label={`Editar devolución de ${refund.memberName}`}
+            onClick={(event) => { event.stopPropagation(); deps.onEdit(refund); }}
+          >
+            <Edit2 className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-destructive" onClick={(e) => { e.stopPropagation(); deps.onDelete(refund); }} title="Eliminar">
-            <Trash2 className="w-4 h-4" />
+          <Button
+            isIconOnly
+            size="sm"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            aria-label={`Eliminar devolución de ${refund.memberName}`}
+            onClick={(event) => { event.stopPropagation(); deps.onDelete(refund); }}
+          >
+            <Trash2 className="size-4" />
           </Button>
         </div>
       ),

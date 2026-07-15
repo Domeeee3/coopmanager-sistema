@@ -1,10 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Contribution, ContributionFormData } from '../../types';
-import { ActionHelpers } from '../types';
+import { ActionHelpers, MemberUpdateOptions } from '../types';
 
 export function createContributionActions(
   helpers: ActionHelpers,
-  deps: { updateMember: (id: string, data: any) => void },
+  deps: { updateMember: (id: string, data: Partial<import('../../types').Member>, options?: MemberUpdateOptions) => void },
 ) {
   const { dispatch, getState, showToast, logActivity, addTransaction } = helpers;
 
@@ -44,7 +44,7 @@ export function createContributionActions(
       deps.updateMember(member.id, {
         totalContributions: member.totalContributions + totalAmount,
         currentBalance: member.currentBalance + totalAmount,
-      });
+      }, { notify: false, logActivity: false });
     }
 
     showToast('success', 'Aporte pagado', `Aporte de ${state.config.currencySymbol}${totalAmount} registrado y pagado.`);
@@ -83,7 +83,7 @@ export function createContributionActions(
           .filter(c => c.memberId === member.id && c.status === 'paid')
           .map(c => c.id === id ? updated : c);
         const totalContributions = memberContribs.reduce((sum, c) => sum + c.totalAmount, 0);
-        deps.updateMember(member.id, { totalContributions });
+        deps.updateMember(member.id, { totalContributions }, { notify: false, logActivity: false });
       }
     }
 
@@ -103,7 +103,7 @@ export function createContributionActions(
       const memberContribs = state.contributions
         .filter(c => c.memberId === member.id && c.status === 'paid' && c.id !== id);
       const totalContributions = memberContribs.reduce((sum, c) => sum + c.totalAmount, 0);
-      deps.updateMember(member.id, { totalContributions });
+      deps.updateMember(member.id, { totalContributions }, { notify: false, logActivity: false });
     }
 
     if (contribution.status === 'paid') {

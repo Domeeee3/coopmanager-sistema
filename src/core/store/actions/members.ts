@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Member, MemberFormData } from '../../types';
-import { ActionHelpers } from '../types';
+import { ActionHelpers, MemberUpdateOptions } from '../types';
 
 export function createMemberActions(helpers: ActionHelpers) {
   const { dispatch, getState, showToast, logActivity } = helpers;
@@ -21,7 +21,7 @@ export function createMemberActions(helpers: ActionHelpers) {
     return member;
   };
 
-  const updateMember = (id: string, data: Partial<Member>) => {
+  const updateMember = (id: string, data: Partial<Member>, options: MemberUpdateOptions = {}) => {
     const member = getState().members.find(m => m.id === id);
     if (member) {
       const updated: Member = {
@@ -30,19 +30,13 @@ export function createMemberActions(helpers: ActionHelpers) {
         updatedAt: new Date().toISOString(),
       };
       dispatch({ type: 'UPDATE_MEMBER', payload: updated });
-      logActivity('member_edit', `Socio actualizado: ${member.name}`, { old: member, new: updated }, id);
-      showToast('success', 'Socio actualizado');
+      if (options.logActivity !== false) logActivity('member_edit', `Socio actualizado: ${member.name}`, { old: member, new: updated }, id);
+      if (options.notify === true) showToast('success', 'Socio actualizado');
     }
   };
 
-  const deleteMember = (id: string) => {
-    const member = getState().members.find(m => m.id === id);
-    dispatch({ type: 'DELETE_MEMBER', payload: id });
-    if (member) logActivity('member_delete', `Socio eliminado: ${member.name}`, { member }, id);
-    showToast('success', 'Socio eliminado');
-  };
 
   const getMember = (id: string) => getState().members.find(m => m.id === id);
 
-  return { addMember, updateMember, deleteMember, getMember };
+  return { addMember, updateMember, getMember };
 }

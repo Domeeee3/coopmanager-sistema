@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@heroui/styles";
 
 @plugin "tailwindcss-animate";
 
@@ -7,23 +8,23 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--surface-foreground);
+  --color-popover: var(--overlay);
+  --color-popover-foreground: var(--overlay-foreground);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-foreground);
+  --color-secondary: var(--surface-secondary);
+  --color-secondary-foreground: var(--surface-secondary-foreground);
+  --color-muted: var(--surface-secondary);
+  --color-muted-foreground: var(--muted);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: var(--danger-foreground);
   --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
+  --color-input: var(--field-border);
+  --color-ring: var(--focus);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -66,122 +67,175 @@
 }
 
 /*
- * PALETA DE COLORES — Solo 5 colores:
- * BLANCO, NEGRO, GRIS, ROJO, VERDE
- * Todos los valores usan oklch.
+ * SISTEMA CROMÁTICO — CoopManager
+ * Roles semánticos HeroUI: pino para acción, verde para éxito, ámbar para
+ * atención y rojo para riesgo. Los aliases legacy mantienen compatibles las
+ * utilidades existentes mientras las superficies HeroUI usan sus tokens nativos.
  */
-
 :root {
-  --radius: 0.625rem;
+  --white: oklch(1 0 0);
+  --snow: oklch(0.991 0.003 95);
+  --eclipse: oklch(0.235 0.021 265);
+  --radius: 0.45rem;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
 
-  /* Blanco / Negro / Gris */
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* HeroUI: superficies claras, cálidas y de bajo contraste. */
+  --background: oklch(0.978 0.009 94);
+  --foreground: var(--eclipse);
+  --surface: oklch(0.996 0.003 94);
+  --surface-foreground: var(--foreground);
+  --surface-secondary: oklch(0.953 0.012 94);
+  --surface-secondary-foreground: var(--foreground);
+  --surface-tertiary: oklch(0.922 0.017 94);
+  --surface-tertiary-foreground: var(--foreground);
+  --overlay: oklch(0.998 0.002 94);
+  --overlay-foreground: var(--foreground);
+  --muted: oklch(0.50 0.018 160);
+  --default: var(--surface-secondary);
+  --default-foreground: var(--foreground);
+  --scrollbar: oklch(0.82 0.014 94);
 
-  /* Rojo */
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
+  --accent: #2e63eb;
+  --accent-foreground: var(--snow);
+  --success: oklch(0.56 0.13 155);
+  --success-foreground: var(--snow);
+  --warning: oklch(0.72 0.14 78);
+  --warning-foreground: oklch(0.26 0.025 78);
+  --danger: oklch(0.56 0.19 28);
+  --danger-foreground: var(--snow);
+  --info: var(--accent);
+  --info-foreground: var(--snow);
 
-  /* Verde */
-  --success: oklch(0.765 0.177 163.223);
-  --success-foreground: oklch(0.985 0 0);
+  --field-background: var(--surface);
+  --field-foreground: var(--foreground);
+  --field-placeholder: var(--muted);
+  --field-border: oklch(0.87 0.014 94);
+  --field-border-width: 1px;
+  --border-width-field: 1px;
+  --field-radius: var(--radius);
+  --field-focus: var(--field-background);
+  --border: oklch(0.88 0.012 94);
+  --separator: oklch(0.91 0.01 94);
+  --focus: var(--accent);
+  --link: var(--accent);
+  --backdrop: rgb(15 28 61 / 0.48);
+  --background-inverse: var(--foreground);
+  --segment: var(--surface);
+  --segment-foreground: var(--foreground);
+  --surface-shadow: 0 1px 2px rgb(20 38 30 / 0.04), 0 8px 24px rgb(20 38 30 / 0.06);
+  --overlay-shadow: 0 12px 32px rgb(20 38 30 / 0.14), 0 2px 8px rgb(20 38 30 / 0.08);
+  --field-shadow: 0 1px 2px rgb(20 38 30 / 0.04);
 
-  /* Warning = rojo (mismo que destructive) */
-  --warning: oklch(0.577 0.245 27.325);
-  --warning-foreground: oklch(0.985 0 0);
+  /* Compatibilidad con utilidades existentes. */
+  --card: var(--surface);
+  --card-foreground: var(--surface-foreground);
+  --popover: var(--overlay);
+  --popover-foreground: var(--overlay-foreground);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
+  --secondary: var(--surface-secondary);
+  --secondary-foreground: var(--surface-secondary-foreground);
+  --muted-foreground: var(--muted);
+  --destructive: var(--danger);
+  --destructive-foreground: var(--danger-foreground);
+  --input: var(--field-border);
+  --ring: var(--focus);
 
-  /* Info = gris */
-  --info: oklch(0.556 0 0);
-  --info-foreground: oklch(0.985 0 0);
+  /* Datos: suficiente separación sin introducir colores arbitrarios. */
+  --chart-1: var(--accent);
+  --chart-2: var(--success);
+  --chart-3: var(--warning);
+  --chart-4: oklch(0.59 0.12 35);
+  --chart-5: oklch(0.58 0.022 265);
 
-  /* Charts — gris + verde + rojo */
-  --chart-1: oklch(0.40 0 0);
-  --chart-2: oklch(0.765 0.25 163.223);
-  --chart-3: oklch(0.577 0.30 27.325);
-  --chart-4: oklch(0.60 0 0);
-  --chart-5: oklch(0.80 0 0);
-
-  /* Sidebar — always black */
-  --sidebar: oklch(0 0 0);
-  --sidebar-foreground: oklch(1 0 0);
-  --sidebar-primary: oklch(0 0 0);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.15 0 0);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #13171f;
+  --sidebar-foreground: var(--snow);
+  --sidebar-primary: var(--sidebar);
+  --sidebar-primary-foreground: var(--snow);
+  --sidebar-accent: #1b3d70;
+  --sidebar-accent-foreground: var(--snow);
+  --sidebar-border: rgb(255 255 255 / 13%);
+  --sidebar-ring: var(--accent);
 }
 
 .dark {
-  /* Blanco / Negro / Gris */
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --background: oklch(0.15 0.012 265);
+  --foreground: oklch(0.945 0.01 94);
+  --surface: oklch(0.205 0.017 265);
+  --surface-foreground: var(--foreground);
+  --surface-secondary: oklch(0.245 0.019 265);
+  --surface-secondary-foreground: var(--foreground);
+  --surface-tertiary: oklch(0.285 0.022 265);
+  --surface-tertiary-foreground: var(--foreground);
+  --overlay: oklch(0.23 0.018 265);
+  --overlay-foreground: var(--foreground);
+  --muted: oklch(0.70 0.018 265);
+  --default: var(--surface-secondary);
+  --default-foreground: var(--foreground);
+  --scrollbar: oklch(0.42 0.018 265);
 
-  /* Rojo */
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
+  --accent: #2e63eb;
+  --accent-foreground: var(--snow);
+  --success: oklch(0.74 0.15 155);
+  --success-foreground: var(--snow);
+  --warning: oklch(0.82 0.14 80);
+  --warning-foreground: oklch(0.23 0.02 80);
+  --danger: oklch(0.69 0.18 28);
+  --danger-foreground: var(--snow);
+  --info: var(--accent);
+  --info-foreground: var(--snow);
 
-  /* Verde */
-  --success: oklch(0.696 0.17 162.48);
-  --success-foreground: oklch(0.985 0 0);
+  --field-background: var(--surface);
+  --field-foreground: var(--foreground);
+  --field-placeholder: var(--muted);
+  --field-border: oklch(0.34 0.018 265);
+  --border: oklch(0.32 0.017 265);
+  --separator: oklch(0.28 0.015 265);
+  --focus: var(--accent);
+  --link: var(--accent);
+  --backdrop: rgb(4 10 28 / 0.68);
+  --background-inverse: var(--foreground);
+  --segment: var(--surface-tertiary);
+  --segment-foreground: var(--foreground);
+  --surface-shadow: 0 0 0 1px rgb(255 255 255 / 0.025);
+  --overlay-shadow: 0 18px 40px rgb(0 0 0 / 0.32);
+  --field-shadow: 0 0 0 1px rgb(255 255 255 / 0.02);
 
-  /* Warning = rojo */
-  --warning: oklch(0.704 0.191 22.216);
-  --warning-foreground: oklch(0.985 0 0);
+  --card: var(--surface);
+  --card-foreground: var(--surface-foreground);
+  --popover: var(--overlay);
+  --popover-foreground: var(--overlay-foreground);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
+  --secondary: var(--surface-secondary);
+  --secondary-foreground: var(--surface-secondary-foreground);
+  --muted-foreground: var(--muted);
+  --destructive: var(--danger);
+  --destructive-foreground: var(--danger-foreground);
+  --input: var(--field-border);
+  --ring: var(--focus);
 
-  /* Info = gris */
-  --info: oklch(0.708 0 0);
-  --info-foreground: oklch(0.985 0 0);
+  --chart-1: var(--accent);
+  --chart-2: var(--success);
+  --chart-3: var(--warning);
+  --chart-4: oklch(0.71 0.13 35);
+  --chart-5: oklch(0.72 0.02 265);
 
-  /* Charts — gris + verde + rojo */
-  --chart-1: oklch(0.70 0 0);
-  --chart-2: oklch(0.80 0.30 162.48);
-  --chart-3: oklch(0.80 0.35 25.0);
-  --chart-4: oklch(0.50 0 0);
-  --chart-5: oklch(0.85 0 0);
-
-  /* Sidebar — always black */
-  --sidebar: oklch(0 0 0);
-  --sidebar-foreground: oklch(1 0 0);
-  --sidebar-primary: oklch(0 0 0);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.15 0 0);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: #13171f;
+  --sidebar-foreground: var(--snow);
+  --sidebar-primary: var(--sidebar);
+  --sidebar-primary-foreground: var(--snow);
+  --sidebar-accent: #1b3d70;
+  --sidebar-accent-foreground: var(--snow);
+  --sidebar-border: rgb(255 255 255 / 13%);
+  --sidebar-ring: var(--accent);
 }
 
-/* ==================== BASE STYLES ==================== */
 @layer base {
   * {
     @apply border-border;
@@ -192,7 +246,6 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 
-  /* Scrollbar */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -210,18 +263,15 @@
     @apply bg-muted-foreground/50;
   }
 
-  /* Selection */
   ::selection {
-    @apply bg-primary/30 text-primary-foreground;
+    @apply bg-primary/25 text-foreground;
   }
 
-  /* Focus visible */
   :focus-visible {
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 }
 
-/* ==================== UTILITY STYLES ==================== */
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none;
@@ -243,7 +293,6 @@
   .animation-delay-500 { animation-delay: 500ms; }
 }
 
-/* ==================== ANIMATIONS ==================== */
 @keyframes slide-up {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -269,7 +318,6 @@
 .animate-fade-in { animation: fade-in 0.3s ease-in-out; }
 .animate-scale-in { animation: scale-in 0.2s ease-out; }
 
-/* Stagger animations */
 .stagger-animation > * { animation: slide-up 0.3s ease-out backwards; }
 .stagger-animation > *:nth-child(1) { animation-delay: 0ms; }
 .stagger-animation > *:nth-child(2) { animation-delay: 100ms; }
@@ -280,14 +328,12 @@
 .stagger-animation > *:nth-child(7) { animation-delay: 600ms; }
 .stagger-animation > *:nth-child(8) { animation-delay: 700ms; }
 
-/* ==================== DARK MODE ==================== */
 @layer base {
   .dark {
     color-scheme: dark;
   }
 }
 
-/* ==================== PRINT ==================== */
 @media print {
   body {
     @apply bg-white text-black;
@@ -300,4 +346,244 @@
   .print-break {
     page-break-before: always;
   }
+}
+
+@layer components {
+  .card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: none;
+  }
+}
+
+/* Overlay surfaces */
+@layer components {
+  /* Marco único para formularios, confirmaciones y diálogos de alerta. */
+  .modal__container,
+  .alert-dialog__container {
+    width: calc(100vw - 2rem) !important;
+    max-width: 32rem !important;
+  }
+
+  .modal__container.modal--wide {
+    max-width: 40rem !important;
+  }
+
+  .modal__footer.modal--actions-inline {
+    flex-wrap: nowrap;
+    justify-content: flex-end !important;
+  }
+
+  .modal__dialog,
+  .alert-dialog__dialog {
+    overflow: hidden;
+    border-radius: calc(var(--radius) + 4px);
+  }
+
+  .modal__backdrop,
+  .alert-dialog__backdrop {
+    background: var(--backdrop);
+    backdrop-filter: blur(3px);
+  }
+
+  .modal__dialog,
+  .alert-dialog__dialog {
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) + 4px);
+    background: var(--overlay);
+    color: var(--overlay-foreground);
+    box-shadow: var(--overlay-shadow);
+  }
+
+  .modal__header,
+  .alert-dialog__header {
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-4) 0;
+  }
+
+  .modal__heading,
+  .alert-dialog__heading {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .modal__body,
+  .alert-dialog__body {
+    padding: var(--space-4) !important;
+    color: var(--foreground);
+  }
+
+  .modal__footer,
+  .alert-dialog__footer {
+    gap: var(--space-3);
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+    justify-content: space-between !important;
+    padding: var(--space-3) var(--space-4) !important;
+  }
+
+  .modal__close-trigger,
+  .alert-dialog__close-trigger {
+    border-radius: var(--radius);
+    color: var(--muted);
+  }
+
+  .modal__close-trigger:hover,
+  .alert-dialog__close-trigger:hover {
+    background: var(--surface-secondary);
+    color: var(--foreground);
+  }
+}
+
+/* Formularios y tablas: una única jerarquía visual para componentes HeroUI y heredados. */
+@layer components {
+  .modal__body :is(.label, label),
+  .alert-dialog__body :is(.label, label) {
+    color: var(--foreground);
+  }
+
+  :is(.input, .textarea, .select__trigger) {
+    border-color: var(--field-border);
+    border-radius: var(--radius);
+    background: var(--field-background);
+    color: var(--field-foreground);
+    box-shadow: var(--field-shadow);
+  }
+
+  :is(.input, .textarea, .select__trigger):is(:focus, [data-focused="true"], [data-focus-visible="true"]) {
+    border-color: var(--focus);
+    box-shadow: 0 0 0 1px var(--focus);
+  }
+
+  .select__popover {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--overlay-shadow);
+  }
+
+  .table-root,
+  .table-root--primary,
+  .table-root--secondary {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 0;
+  }
+
+  .table__header,
+  .table-root--secondary .table__header,
+  .table-root--secondary .table__column {
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-secondary);
+  }
+
+  .table__column {
+    background: var(--surface-secondary);
+    color: var(--muted);
+    padding: 0.625rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .table__column::after {
+    content: none;
+  }
+
+  .table__cell {
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--foreground);
+    padding: 0.625rem 1rem;
+  }
+
+  .table__row:last-child .table__cell {
+    border-bottom: 0;
+  }
+
+  .table__row:hover .table__cell,
+  .table__row[data-hovered="true"] .table__cell {
+    background: var(--surface-secondary);
+  }
+}
+
+/* Controles de acción y selección alineados con el radio y la escala tipográfica del sistema. */
+@layer components {
+  .button,
+  .button--icon-only {
+    border-radius: var(--radius);
+  }
+
+  :is(.button, .input, .textarea, .select__trigger, .select__value, .label, .search-field__input) {
+    font-size: 0.875rem;
+  }
+
+  .select__popover [data-slot="list-box-item"][data-selected="true"],
+  .select__popover [data-slot="list-box-item"][aria-selected="true"] {
+    background: var(--accent);
+    color: var(--accent-foreground);
+  }
+
+  .select__popover .list-box-item[data-selected="true"] {
+    border-radius: var(--radius);
+  }
+
+  .select__popover [data-slot="list-box-item"][data-selected="true"] :is(svg, [data-slot="list-box-item-indicator"]),
+  .select__popover [data-slot="list-box-item"][aria-selected="true"] :is(svg, [data-slot="list-box-item-indicator"]) {
+    color: currentColor;
+  }
+}
+
+/* Ajustes de contraste para calendarios HeroUI y un único control de limpieza en búsquedas. */
+@layer components {
+  .calendar {
+    color: var(--foreground);
+  }
+
+  .calendar__heading,
+  .calendar__cell {
+    color: var(--foreground);
+  }
+
+  .calendar__header-cell,
+  .calendar__cell[data-outside-month="true"] {
+    color: var(--muted);
+  }
+
+  .calendar__cell[data-selected="true"] {
+    color: var(--accent-foreground);
+  }
+
+  .dark .calendar__header-cell {
+    color: color-mix(in oklab, var(--foreground) 68%, transparent);
+  }
+
+  input[type="search"]::-webkit-search-cancel-button,
+  input[type="search"]::-webkit-search-decoration {
+    appearance: none;
+    display: none;
+  }
+}
+
+@keyframes toast-enter-down {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toast-exit-up {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-12px); }
+}
+
+.animate-toast-enter-down { animation: toast-enter-down 0.24s ease-out both; }
+.animate-toast-exit-up { animation: toast-exit-up 0.24s ease-in both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-toast-enter-down,
+  .animate-toast-exit-up { animation-duration: 0.01ms; }
+}
+
+.coopmanager-sidebar {
+  background-color: #13171f !important;
 }

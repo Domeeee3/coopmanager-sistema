@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Expense, ExpenseFormData, Refund, RefundFormData } from '../../types';
-import { ActionHelpers } from '../types';
+import { ActionHelpers, MemberUpdateOptions } from '../types';
 
 export function createExpenseActions(helpers: ActionHelpers) {
   const { dispatch, getState, showToast, logActivity, addTransaction } = helpers;
@@ -20,6 +20,17 @@ export function createExpenseActions(helpers: ActionHelpers) {
     return expense;
   };
 
+  const updateExpense = (id: string, data: ExpenseFormData) => {
+    const state = getState();
+    const expense = state.expenses.find((item) => item.id === id);
+    if (!expense) return;
+
+    const updated: Expense = { ...expense, ...data };
+    dispatch({ type: 'SET_EXPENSES', payload: state.expenses.map((item) => item.id === id ? updated : item) });
+    logActivity('expense_add', 'Gasto actualizado: ' + updated.description, { old: expense, new: updated }, id);
+    showToast('success', 'Gasto actualizado');
+  };
+
   const deleteExpense = (id: string) => {
     const state = getState();
     const expense = state.expenses.find(e => e.id === id);
@@ -28,12 +39,12 @@ export function createExpenseActions(helpers: ActionHelpers) {
     showToast('success', 'Gasto eliminado');
   };
 
-  return { addExpense, deleteExpense };
+  return { addExpense, updateExpense, deleteExpense };
 }
 
 export function createRefundActions(
   helpers: ActionHelpers,
-  deps: { updateMember: (id: string, data: any) => void },
+  deps: { updateMember: (id: string, data: Partial<import('../../types').Member>, options?: MemberUpdateOptions) => void },
 ) {
   const { dispatch, getState, showToast, logActivity, addTransaction } = helpers;
 
@@ -51,7 +62,7 @@ export function createRefundActions(
     dispatch({ type: 'ADD_REFUND', payload: refund });
 
     if (member && member.status === 'active') {
-      deps.updateMember(member.id, { status: 'inactive' });
+      deps.updateMember(member.id, { status: 'inactive' }, { notify: false, logActivity: false });
     }
 
     addTransaction('refund', -data.amount, `Devolución por retiro - ${member?.name}: ${data.reason}`);

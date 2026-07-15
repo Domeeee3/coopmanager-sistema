@@ -1,7 +1,6 @@
 import React from 'react';
+import { Button, Card, ProgressBar } from '@heroui/react';
 import { useApp } from '@/core/store/AppContext';
-import { Card } from '@/shared/ui/card';
-import { Button } from '@/shared/ui/button';
 import { StatusBadge } from '@/shared/components/status-badge';
 import { formatCurrency, formatDate } from '@/core/lib/formatters';
 import { Loan } from '@/core/types';
@@ -25,7 +24,7 @@ export function LoanCard({ loan, onSelect, onDelete, transactions }: LoanCardPro
       className={`cursor-pointer transition-colors hover:bg-muted/50 ${isPaid ? 'opacity-60' : ''}`}
       onClick={() => onSelect(loan)}
     >
-      <div className="p-4 flex items-center gap-4">
+      <Card.Content className="p-4 flex items-center gap-4">
         {/* Info principal */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
@@ -43,12 +42,11 @@ export function LoanCard({ loan, onSelect, onDelete, transactions }: LoanCardPro
           )}
           {/* Barra de progreso compacta */}
           <div className="flex items-center gap-3">
-            <div className="flex-1 bg-muted rounded-full h-1.5">
-              <div
-                className={`h-1.5 rounded-full transition-all ${isPaid ? 'bg-success' : 'bg-primary'}`}
-                style={{ width: `${progress}%` }}
-              />
-            </div>
+            <ProgressBar value={progress} aria-label="Progreso del préstamo" size="sm" className="flex-1">
+              <ProgressBar.Track>
+                <ProgressBar.Fill className={isPaid ? 'bg-success' : 'bg-primary'} />
+              </ProgressBar.Track>
+            </ProgressBar>
             <span className="text-xs text-muted-foreground whitespace-nowrap">
               {loan.paidInstallments}/{loan.totalInstallments}
             </span>
@@ -66,16 +64,16 @@ export function LoanCard({ loan, onSelect, onDelete, transactions }: LoanCardPro
           {!hasPayments && (
             <Button
               variant="ghost"
-              size="icon"
+              size="sm" isIconOnly
               className="h-8 w-8 hover:text-destructive"
-              onClick={(e) => { e.stopPropagation(); onDelete(loan); }}
+              onPress={() => onDelete(loan)}
             >
               <Trash2 className="w-4 h-4" />
             </Button>
           )}
           <ChevronRight className="w-4 h-4 text-muted-foreground" />
         </div>
-      </div>
+      </Card.Content>
     </Card>
   );
 }

@@ -1,198 +1,201 @@
-import React, { useState, useMemo } from 'react';
-import { useApp } from '@/core/store/AppContext';
-import { Card, CardContent } from '@/shared/ui/card';
-import { Button } from '@/shared/ui/button';
-import { Input } from '@/shared/ui/input';
-import { Textarea } from '@/shared/ui/textarea';
-import { Label } from '@/shared/ui/label';
+import { useMemo, useState } from 'react';
 import {
+  Button,
+  Input,
+  Label,
+  ListBox,
+  Modal,
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/shared/ui/select';
-import { FormModal, ConfirmModal } from '@/shared/components/custom-modal';
+  TextArea,
+  TextField,
+  useOverlayState,
+} from '@heroui/react';
+import { useApp } from '@/core/store/AppContext';
 import { DataTable } from '@/shared/components/data-table';
+import { DatePicker } from "@/shared/ui/date-picker";
+import { StatCard } from '@/shared/components/StatCard';
 import { formatCurrency } from '@/core/lib/formatters';
 import { useRefundForm } from './hooks/useRefundForm';
 import { getRefundColumns } from './columns';
 import { Plus, UserMinus, DollarSign, TrendingDown } from 'lucide-react';
-import { DatePicker } from '@/shared/ui/date-picker';
 
 export function RefundsTab() {
   const { members, refunds, config } = useApp();
   const form = useRefundForm();
   const [search, setSearch] = useState('');
 
+  const refundFormModal = useOverlayState({
+    isOpen: form.showForm,
+    onOpenChange: (isOpen) => {
+      if (!isOpen) form.closeForm();
+    },
+  });
+  const deleteModal = useOverlayState({
+    isOpen: form.showDelete,
+    onOpenChange: (isOpen) => {
+      if (!isOpen) form.closeDelete();
+    },
+  });
+
   const memberOptions = useMemo(
-    () => members.map(m => ({ value: m.id, label: m.name })),
+    () => members.map(member => ({ value: member.id, label: member.name })),
     [members]
   );
 
   const columns = useMemo(
     () => getRefundColumns({
       currencyCode: config.currencyCode,
+      members,
       onEdit: form.openEdit,
       onDelete: form.openDelete,
     }),
-    [config.currencyCode, form.openEdit, form.openDelete]
+    [config.currencyCode, members, form.openEdit, form.openDelete]
   );
 
   const filteredRefunds = useMemo(
-    () => refunds.filter(r =>
+    () => refunds.filter(refund =>
       !search ||
-      r.memberName.toLowerCase().includes(search.toLowerCase()) ||
-      r.reason.toLowerCase().includes(search.toLowerCase())
+      refund.memberName.toLowerCase().includes(search.toLowerCase()) ||
+      refund.reason.toLowerCase().includes(search.toLowerCase())
     ),
     [refunds, search]
   );
 
   const totalRefunded = useMemo(
-    () => refunds.reduce((sum, r) => sum + r.amount, 0),
+    () => refunds.reduce((sum, refund) => sum + refund.amount, 0),
     [refunds]
   );
 
   return (
     <>
       <div className="space-y-6">
-        {/* Estadísticas */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-lg bg-muted">
-                  <UserMinus className="w-5 h-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Devoluciones</p>
-                  <p className="text-2xl font-bold text-foreground">{refunds.length}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-lg bg-muted">
-                  <DollarSign className="w-5 h-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Monto Devuelto</p>
-                  <p className="text-2xl font-bold text-foreground">
-                    {formatCurrency(totalRefunded, config.currencyCode)}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-lg bg-muted">
-                  <TrendingDown className="w-5 h-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Promedio</p>
-                  <p className="text-2xl font-bold text-foreground">
-                    {formatCurrency(refunds.length > 0 ? totalRefunded / refunds.length : 0, config.currencyCode)}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCard
+            label="Total de devoluciones"
+            value={refunds.length}
+            icon={UserMinus}
+            tone="primary"
+          />
+          <StatCard
+            label="Monto devuelto"
+            value={formatCurrency(totalRefunded, config.currencyCode)}
+            icon={DollarSign}
+            tone="warning"
+          />
+          <StatCard
+            label="Promedio"
+            value={formatCurrency(refunds.length > 0 ? totalRefunded / refunds.length : 0, config.currencyCode)}
+            icon={TrendingDown}
+            tone="success"
+          />
         </div>
 
-        {/* Acciones */}
-        <div className="flex items-center justify-end">
-          <Button size="sm" onClick={form.openCreate}>
-            <Plus className="w-4 h-4 mr-2" />
-            Nueva Devolución
-          </Button>
-        </div>
-
-        {/* Tabla */}
         <DataTable
           data={filteredRefunds}
           columns={columns}
-          keyExtractor={(r) => r.id}
+          keyExtractor={(refund) => refund.id}
           searchValue={search}
           onSearchChange={setSearch}
           searchPlaceholder="Buscar por nombre o motivo..."
+          toolbar={(
+            <Button className="sm:ml-auto" onPress={form.openCreate}>
+              <Plus className="size-4" />
+              Nueva devolución
+            </Button>
+          )}
           emptyMessage="No hay devoluciones registradas"
         />
       </div>
 
-      {/* Modal de formulario de devolución */}
-      <FormModal
-        isOpen={form.showForm}
-        onClose={form.closeForm}
-        onSubmit={form.submit}
-        title={form.selected ? 'Editar Devolución' : 'Nueva Devolución por Retiro'}
-        submitText={form.selected ? 'Guardar Cambios' : 'Registrar Devolución'}
-      >
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>Socio *</Label>
-            <Select
-              value={form.formData.memberId}
-              onValueChange={(value) => form.setFormData({ ...form.formData, memberId: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccione un socio" />
-              </SelectTrigger>
-              <SelectContent>
-                {memberOptions.map(opt => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+      <Modal state={refundFormModal}>
+        <Modal.Backdrop>
+          <Modal.Container size="md" scroll="inside">
+            <Modal.Dialog>
+              <form onSubmit={(event) => { event.preventDefault(); form.submit(); }}>
+                <Modal.Header>
+                  <Modal.Heading>{form.selected ? 'Editar devolución' : 'Nueva devolución por retiro'}</Modal.Heading>
+                  <Modal.CloseTrigger aria-label="Cerrar formulario de devolución" />
+                </Modal.Header>
+                <Modal.Body className="space-y-4">
+                  <Select
+                    fullWidth
+                    placeholder="Seleccione un socio"
+                    selectedKey={form.formData.memberId || null}
+                    onSelectionChange={(key) => form.setFormData({ ...form.formData, memberId: String(key) })}
+                  >
+                    <Label>Socio <span className="text-destructive" aria-hidden="true">*</span></Label>
+                    <Select.Trigger>
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        {memberOptions.map((option) => (
+                          <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
+                            {option.label}
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
 
-          <div className="space-y-2">
-            <Label>Motivo del retiro *</Label>
-            <Textarea
-              value={form.formData.reason}
-              onChange={(e) => form.setFormData({ ...form.formData, reason: e.target.value })}
-              placeholder="Describa el motivo del retiro..."
-              rows={3}
-            />
-          </div>
+                  <TextField fullWidth>
+                    <Label>Motivo del retiro <span className="text-destructive" aria-hidden="true">*</span></Label>
+                    <TextArea
+                      value={form.formData.reason}
+                      onChange={(event) => form.setFormData({ ...form.formData, reason: event.target.value })}
+                      placeholder="Retiro voluntario de la cooperativa"
+                      rows={3}
+                    />
+                  </TextField>
 
-          <div className="space-y-2">
-            <Label>Monto a devolver *</Label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.formData.amount || ''}
-              onChange={(e) => form.setFormData({ ...form.formData, amount: parseFloat(e.target.value) || 0 })}
-              placeholder="0.00"
-            />
-          </div>
+                  <TextField fullWidth type="number">
+                    <Label>Monto a devolver <span className="text-destructive" aria-hidden="true">*</span></Label>
+                    <Input
+                      min="0"
+                      step="0.01"
+                      value={form.formData.amount || ''}
+                      onChange={(event) => form.setFormData({ ...form.formData, amount: parseFloat(event.target.value) || 0 })}
+                      placeholder="150.00"
+                    />
+                  </TextField>
 
-          <div className="space-y-2">
-            <Label>Fecha de depósito</Label>
-            <DatePicker
-              value={form.formData.depositDate}
-              onChange={(value) => form.setFormData({ ...form.formData, depositDate: value })}
-            />
-          </div>
-        </div>
-      </FormModal>
+                  <DatePicker
+                    label="Fecha de depósito"
+                    value={form.formData.depositDate}
+                    onChange={(value) => form.setFormData({ ...form.formData, depositDate: value })}
+                  />
+                </Modal.Body>
+                <Modal.Footer>
+                  <Button type="button" variant="outline" onPress={form.closeForm}>Cancelar</Button>
+                  <Button type="submit">{form.selected ? 'Guardar cambios' : 'Registrar devolución'}</Button>
+                </Modal.Footer>
+              </form>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
 
-      {/* Modal de confirmación de eliminación de devolución */}
-      <ConfirmModal
-        isOpen={form.showDelete}
-        onClose={form.closeDelete}
-        onConfirm={form.confirmDelete}
-        title="Eliminar Devolución"
-        message={`¿Está seguro de que desea eliminar esta devolución de "${form.selected?.memberName}"? Esta acción no se puede deshacer.`}
-        confirmText="Eliminar"
-        variant="danger"
-      />
+      <Modal state={deleteModal}>
+        <Modal.Backdrop>
+          <Modal.Container size="sm">
+            <Modal.Dialog>
+              <Modal.Header>
+                <Modal.Heading>Eliminar devolución</Modal.Heading>
+                <Modal.CloseTrigger aria-label="Cerrar confirmación" />
+              </Modal.Header>
+              <Modal.Body>
+                <p>¿Está seguro de que desea eliminar esta devolución de &quot;{form.selected?.memberName ?? ''}&quot;? Esta acción no se puede deshacer.</p>
+              </Modal.Body>
+              <Modal.Footer>
+                <Button variant="outline" onPress={form.closeDelete}>Cancelar</Button>
+                <Button variant="danger" onPress={() => { form.confirmDelete(); form.closeDelete(); }}>Eliminar</Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
     </>
   );
 }

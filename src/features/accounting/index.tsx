@@ -1,22 +1,20 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '@/core/store/AppContext';
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/ui/card';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/ui/table';
 import { Checkbox } from '@/shared/ui/checkbox';
 import { FormModal, ConfirmModal } from '@/shared/components/custom-modal';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/shared/ui/dialog';
+import { PageHeader } from '@/shared/components/PageHeader';
+import { StatCard } from '@/shared/components/StatCard';
+import { SearchInput } from '@/shared/components/SearchInput';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
+import { MemberAvatar } from '@/shared/components/MemberAvatar';
+import { Modal } from '@heroui/react';
 import { formatCurrency } from '@/core/lib/formatters';
 import { ContributionFormData, Member, Contribution } from '@/core/types';
-import { Check, X, DollarSign, AlertTriangle, Edit2, Trash2, Clock } from 'lucide-react';
+import { Check, X, DollarSign, AlertTriangle, Trash2, Clock } from 'lucide-react';
 
 export function Accounting() {
   const {
@@ -37,6 +35,8 @@ export function Accounting() {
   const [selectedContribution, setSelectedContribution] = useState<Contribution | null>(null);
   const [selectedCell, setSelectedCell] = useState<{ memberId: string; month: string } | null>(null);
   const [withPenalty, setWithPenalty] = useState(false);
+  const [search, setSearch] = useState('');
+  const [contributionFilter, setContributionFilter] = useState('all');
   const currentYear = new Date().getFullYear();
 
   const [formData, setFormData] = useState<ContributionFormData>({
@@ -240,15 +240,15 @@ export function Accounting() {
   const getCellStyle = (status: 'paid' | 'paid_with_penalty' | 'pending' | 'late' | 'none') => {
     switch (status) {
       case 'paid':
-        return 'border-2 border-emerald-700 bg-emerald-100/40 text-emerald-700 cursor-pointer hover:bg-emerald-100/80';
+        return 'bg-success/15 text-success cursor-pointer hover:bg-success/25';
       case 'paid_with_penalty':
-        return 'border-2 border-rose-700 bg-rose-100/40 text-rose-700 cursor-pointer hover:bg-rose-100/80';
+        return 'bg-destructive/15 text-destructive cursor-pointer hover:bg-destructive/25';
       case 'pending':
-        return 'border-2 border-yellow-600 bg-yellow-50/40 text-yellow-700 cursor-pointer hover:bg-yellow-50/80';
+        return 'bg-warning/15 text-warning cursor-pointer hover:bg-warning/25';
       case 'late':
         // late is still considered a type of paid entry when it actually represents
         // an older contribution; we give it a border so it stands out like the others
-        return 'border-2 border-amber-700 bg-amber-100/40 text-amber-700 cursor-pointer hover:bg-amber-100/80';
+        return 'bg-warning/15 text-warning cursor-pointer hover:bg-warning/25';
       case 'none':
         return 'bg-muted text-muted-foreground cursor-pointer hover:bg-muted/80';
     }
@@ -269,76 +269,95 @@ export function Accounting() {
     }
   };
 
+  const filteredActiveMembers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return stats.activeMembers.filter((member) => {
+      const matchesSearch = !query || member.name.toLowerCase().includes(query) || member.phone.includes(query);
+      const currentStatus = getContributionStatus(member.id, stats.currentMonth);
+      const hasLateContribution = months.some((month) => getContributionStatus(member.id, month.value) === "late");
+      const matchesFilter = contributionFilter === "all"
+        || (contributionFilter === "paid" && (currentStatus === "paid" || currentStatus === "paid_with_penalty"))
+        || (contributionFilter === "pending" && currentStatus === "pending")
+        || (contributionFilter === "late" && hasLateContribution)
+        || (contributionFilter === "unregistered" && currentStatus === "none");
+
+      return matchesSearch && matchesFilter;
+    });
+  }, [search, contributionFilter, stats.activeMembers, stats.currentMonth, months, contributionMap]);
+
   const selectedMember = members.find(m => m.id === selectedCell?.memberId);
   const editMember = selectedContribution ? members.find(m => m.id === selectedContribution.memberId) : null;
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Título */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Aportes
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Control de aportes mensuales de los socios
-          </p>
-        </div>
+      <PageHeader
+        title="Aportes"
+        description="Control de aportes mensuales de los socios"
+      />
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatCard
+          label="Pagados"
+          value={stats.totalPaid}
+          description="aportes del año"
+          icon={Check}
+          tone="success"
+        />
+        <StatCard
+          label="Pendientes"
+          value={stats.totalPending}
+          description="este mes"
+          icon={Clock}
+          tone="warning"
+        />
+        <StatCard
+          label="Recaudado"
+          value={formatCurrency(stats.totalAmount, config.currencyCode)}
+          description="del año"
+          icon={DollarSign}
+          tone="primary"
+        />
+        <StatCard
+          label="Multas"
+          value={formatCurrency(stats.totalPenalties, config.currencyCode)}
+          description="cobradas"
+          icon={AlertTriangle}
+          tone="danger"
+        />
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Card className="border-2 border-emerald-600 bg-emerald-50 dark:bg-slate-900">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <Check className="w-5 h-5 text-emerald-600 dark:text-emerald-600" />
-              <p className="text-sm text-emerald-600 dark:text-emerald-600">Pagados</p>
-            </div>
-            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-600">{stats.totalPaid}</p>
-            <p className="text-xs text-emerald-600 dark:text-emerald-600/70">aportes del año</p>
-          </CardContent>
-        </Card>
-        <Card className="border-2 border-yellow-600 bg-yellow-50 dark:bg-slate-900 dark:border-yellow-500">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-yellow-700 dark:text-yellow-400" />
-              <p className="text-sm text-yellow-700 dark:text-yellow-400">Pendientes</p>
-            </div>
-            <p className="text-2xl font-bold text-yellow-700 dark:text-yellow-400">{stats.totalPending}</p>
-            <p className="text-xs text-yellow-700 dark:text-yellow-400/70">este mes</p>
-          </CardContent>
-        </Card>
-        <Card className="border-2 border-indigo-600 bg-indigo-50 dark:bg-slate-900">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-indigo-600 dark:text-indigo-600" />
-              <p className="text-sm text-indigo-600 dark:text-indigo-600">Recaudado</p>
-            </div>
-            <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-600">{formatCurrency(stats.totalAmount, config.currencyCode)}</p>
-            <p className="text-xs text-indigo-600 dark:text-indigo-600/70">del año</p>
-          </CardContent>
-        </Card>
-        <Card className="border-2 border-red-600 bg-red-50 dark:bg-slate-900">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-600" />
-              <p className="text-sm text-red-600 dark:text-red-600">Multas</p>
-            </div>
-            <p className="text-2xl font-bold text-red-600 dark:text-red-600">{formatCurrency(stats.totalPenalties, config.currencyCode)}</p>
-            <p className="text-xs text-red-600 dark:text-red-600/70">cobradas</p>
-          </CardContent>
-        </Card>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <SearchInput
+          className="max-w-sm"
+          value={search}
+          onValueChange={setSearch}
+          placeholder="Buscar socio por nombre o teléfono..."
+          aria-label="Buscar socios en aportes"
+        />
+        <Select value={contributionFilter} onValueChange={setContributionFilter}>
+          <SelectTrigger className="w-full sm:w-56">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los socios</SelectItem>
+            <SelectItem value="paid">Pagados este mes</SelectItem>
+            <SelectItem value="pending">Pendientes este mes</SelectItem>
+            <SelectItem value="late">Con atrasos</SelectItem>
+            <SelectItem value="unregistered">Sin registrar este mes</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Leyenda compacta */}
-      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground mt-2">
-        <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400">
+      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5 text-success">
           <Check className="w-3 h-3" /> Pagado
         </span>
-        <span className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+        <span className="flex items-center gap-1.5 text-warning">
           <Clock className="w-3 h-3" /> Pendiente
         </span>
-        <span className="flex items-center gap-1.5 text-red-700 dark:text-red-400">
+        <span className="flex items-center gap-1.5 text-destructive">
           <AlertTriangle className="w-3 h-3" /> Atrasado
         </span>
         <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -347,12 +366,11 @@ export function Accounting() {
       </div>
 
       {/* Matriz de aportes */}
-      <Card>
-        <div className="overflow-x-auto">
-          <Table>
+      <div className="space-y-3">
+        <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="sticky left-0 bg-muted z-10 min-w-50">Socio</TableHead>
+                <TableHead className="sticky left-0 z-10 min-w-50 bg-muted !text-left">Socio</TableHead>
                 {months.map(month => (
                   <TableHead key={month.value} className="text-center text-xs min-w-18">
                     {month.label}
@@ -361,15 +379,17 @@ export function Accounting() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {stats.activeMembers.map(member => (
+              {filteredActiveMembers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={months.length + 1} className="h-28 text-center text-sm text-muted-foreground">
+                    No hay socios que coincidan con la búsqueda o el filtro.
+                  </TableCell>
+                </TableRow>
+              ) : stats.activeMembers.map(member => (
                 <TableRow key={member.id}>
-                  <TableCell className="sticky left-0 bg-card z-10">
+                  <TableCell className="sticky left-0 z-10 bg-card !text-left [&>div.flex]:!justify-start">
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
-                        <span className="text-xs font-semibold text-muted-foreground">
-                          {member.name.charAt(0)}
-                        </span>
-                      </div>
+                      <MemberAvatar name={member.name} photo={member.profilePhoto} />
                       <span className="font-medium text-foreground truncate">
                         {member.name}
                       </span>
@@ -381,7 +401,7 @@ export function Accounting() {
                       <TableCell key={monthEntry.value} className="text-center">
                         <button
                           onClick={() => handleCellClick(member, monthEntry.value)}
-                          className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${getCellStyle(status)}`}
+                          className={`mx-auto size-10 rounded-full flex items-center justify-center transition-colors ${getCellStyle(status)}`}
                           title={`${member.name} - ${monthEntry.label}: ${status === 'paid' ? 'Pagado (click para editar)' : status === 'paid_with_penalty' ? 'Pagado con multa (click para editar)' : status === 'pending' ? 'Pendiente' : status === 'late' ? 'Atrasado' : 'Sin registrar'}`}
                         >
                           {getCellIcon(status)}
@@ -392,15 +412,8 @@ export function Accounting() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
-        </div>
-
-        {stats.activeMembers.length === 0 && (
-          <div className="p-8 text-center text-muted-foreground">
-            No hay socios registrados. Agregue socios desde la sección de Socios.
-          </div>
-        )}
-      </Card>
+        </Table>
+      </div>
 
       {/* Modal para registrar aporte */}
       <FormModal
@@ -414,7 +427,7 @@ export function Accounting() {
         submitText="Registrar y Marcar Pagado"
       >
         <div className="space-y-4">
-          <div className="p-4 bg-muted rounded-lg">
+          <div className="p-4 rounded-lg border border-primary/10 bg-primary/5">
             <p className="text-sm text-muted-foreground">Socio</p>
             <p className="font-semibold text-foreground">{selectedMember?.name}</p>
             <p className="text-sm text-muted-foreground mt-2">Mes</p>
@@ -427,7 +440,7 @@ export function Accounting() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label>Aporte Capital</Label>
               <div className="relative">
@@ -454,7 +467,7 @@ export function Accounting() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 p-4 bg-muted rounded-lg">
+          <div className="flex items-center gap-3 p-4 rounded-lg border border-primary/10 bg-primary/5">
             <Checkbox
               id="withPenalty"
               checked={withPenalty}
@@ -470,7 +483,7 @@ export function Accounting() {
             </label>
           </div>
 
-          <div className="p-4 bg-muted rounded-lg">
+          <div className="p-4 rounded-lg border border-primary/10 bg-primary/5">
             <div className="flex justify-between items-center">
               <span className="font-medium text-foreground">Total a Pagar</span>
               <span className="text-2xl font-bold text-foreground">
@@ -485,18 +498,20 @@ export function Accounting() {
       </FormModal>
 
       {/* Modal para editar aporte */}
-      <Dialog open={showEditModal} onOpenChange={(open) => {
+      <Modal.Backdrop variant="blur" isOpen={showEditModal} onOpenChange={(open) => {
         if (!open) {
           setShowEditModal(false);
           setSelectedContribution(null);
         }
       }}>
-        <DialogContent className="sm:max-w-106.25">
-          <DialogHeader>
-            <DialogTitle>Editar Aporte</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="p-4 bg-muted rounded-lg">
+        <Modal.Container size="md" className="modal--wide">
+          <Modal.Dialog>
+            <Modal.CloseTrigger />
+          <Modal.Header>
+            <Modal.Heading>Editar Aporte</Modal.Heading>
+          </Modal.Header>
+          <Modal.Body className="space-y-4 py-4">
+            <div className="p-4 rounded-lg border border-primary/10 bg-primary/5">
               <p className="text-sm text-muted-foreground">Socio</p>
               <p className="font-semibold text-foreground">{editMember?.name}</p>
               <p className="text-sm text-muted-foreground mt-2">Mes</p>
@@ -505,7 +520,7 @@ export function Accounting() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Aporte Capital</Label>
                 <div className="relative">
@@ -532,7 +547,7 @@ export function Accounting() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 p-4 bg-muted rounded-lg">
+            <div className="flex items-center gap-3 p-4 rounded-lg border border-primary/10 bg-primary/5">
               <Checkbox
                 id="withPenaltyEdit"
                 checked={withPenalty}
@@ -548,7 +563,7 @@ export function Accounting() {
               </label>
             </div>
 
-            <div className="p-4 bg-muted rounded-lg">
+            <div className="p-4 rounded-lg border border-primary/10 bg-primary/5">
               <div className="flex justify-between items-center">
                 <span className="font-medium text-foreground">Total</span>
                 <span className="text-2xl font-bold text-foreground">
@@ -560,27 +575,22 @@ export function Accounting() {
               </div>
             </div>
 
-          </div>
-          <DialogFooter className="flex w-full sm:justify-between items-center mt-6">
-            <Button
-              variant="destructive"
-              onClick={() => setShowDeleteConfirm(true)}
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
+          </Modal.Body>
+          <Modal.Footer className="modal--actions-inline flex w-full items-center !justify-end !gap-2 !px-4 !py-3">
+            <Button className="inline-flex items-center justify-center gap-2" variant="destructive" onClick={() => setShowDeleteConfirm(true)}>
+              <Trash2 className="size-4 shrink-0" />
               Eliminar
             </Button>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setShowEditModal(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={handleEditSubmit}>
-                <Edit2 className="w-4 h-4 mr-2" />
-                Guardar Cambios
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <Button variant="outline" onClick={() => setShowEditModal(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleEditSubmit}>
+              Guardar Cambios
+            </Button>
+          </Modal.Footer>
+        </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
       {/* Confirmación de eliminación */}
       <ConfirmModal

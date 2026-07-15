@@ -1,7 +1,9 @@
-import { Action, AppState, initialConfig } from './types';
+import { Action, AppState, initialConfig, initialState } from './types';
 
 export function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case 'LOAD_WORKSPACE':
+      return { ...initialState, ...action.payload, loading: false, toasts: state.toasts };
     case 'SET_LOADING':
       return { ...state, loading: action.payload };
     case 'SET_ERROR':
@@ -25,8 +27,6 @@ export function appReducer(state: AppState, action: Action): AppState {
         ...state,
         members: state.members.map(m => m.id === action.payload.id ? action.payload : m),
       };
-    case 'DELETE_MEMBER':
-      return { ...state, members: state.members.filter(m => m.id !== action.payload) };
     case 'SET_LOANS':
       return { ...state, loans: action.payload };
     case 'ADD_LOAN':

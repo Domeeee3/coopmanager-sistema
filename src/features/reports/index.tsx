@@ -8,7 +8,11 @@ import {
   SelectValue,
 } from '@/shared/ui/select';
 import { DataTable } from '@/shared/components/data-table';
-import { formatCurrency, formatDate } from '@/core/lib/formatters';
+import { PageHeader } from "@/shared/components/PageHeader";
+import { SectionTabs } from "@/shared/components/SectionTabs";
+import { StatCard } from "@/shared/components/StatCard";
+import { MemberAvatar } from "@/shared/components/MemberAvatar";
+import { formatCurrency, formatDate, formatMonthName } from '@/core/lib/formatters';
 import {
   FileText,
   DollarSign,
@@ -70,6 +74,17 @@ export function Reports() {
   const { contributions, loans, transactions, members, config, refunds } = useApp();
   const [selectedReport, setSelectedReport] = useState<ReportType>('contributions');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [reportSearch, setReportSearch] = useState("");
+
+  const renderMember = (row: { socio: string; memberId?: string }) => {
+    const member = members.find((item) => item.id === row.memberId);
+    return (
+      <div className="flex !justify-start items-center gap-3">
+        <MemberAvatar name={row.socio} photo={member?.profilePhoto} />
+        <span className="font-medium text-foreground">{row.socio}</span>
+      </div>
+    );
+  };
 
   // Generar opciones de meses
   const monthOptions = useMemo(() => {
@@ -102,6 +117,7 @@ export function Reports() {
             return {
               id: c.id,
               socio: member?.name || 'Desconocido',
+              memberId: c.memberId,
               mes: c.month,
               monto: c.shareAmount,
               fecha: c.paidDate || c.createdAt,
@@ -109,8 +125,8 @@ export function Reports() {
           }),
           total: filtered.reduce((sum, c) => sum + c.shareAmount, 0),
           columns: [
-            { key: 'socio', header: 'Socio' },
-            { key: 'mes', header: 'Mes' },
+            { key: 'socio', header: 'Socio', align: 'left' as const, render: renderMember },
+            { key: 'mes', header: 'Mes', render: (row: { mes: string }) => formatMonthName(row.mes) },
             { key: 'monto', header: 'Monto', align: 'right' as const, render: (row: any) => formatCurrency(row.monto, config.currencyCode) },
             { key: 'fecha', header: 'Fecha Pago', render: (row: any) => formatDate(row.fecha) },
           ],
@@ -127,6 +143,7 @@ export function Reports() {
             return {
               id: c.id,
               socio: member?.name || 'Desconocido',
+              memberId: c.memberId,
               mes: c.month,
               monto: c.expenseAmount,
               fecha: c.paidDate || c.createdAt,
@@ -134,8 +151,8 @@ export function Reports() {
           }),
           total: filtered.reduce((sum, c) => sum + c.expenseAmount, 0),
           columns: [
-            { key: 'socio', header: 'Socio' },
-            { key: 'mes', header: 'Mes' },
+            { key: 'socio', header: 'Socio', align: 'left' as const, render: renderMember },
+            { key: 'mes', header: 'Mes', render: (row: { mes: string }) => formatMonthName(row.mes) },
             { key: 'monto', header: 'Monto', align: 'right' as const, render: (row: any) => formatCurrency(row.monto, config.currencyCode) },
             { key: 'fecha', header: 'Fecha Pago', render: (row: any) => formatDate(row.fecha) },
           ],
@@ -149,6 +166,7 @@ export function Reports() {
           return {
             id: loan.id,
             socio: loan.memberName,
+            memberId: loan.memberId,
             prestamo: `${config.currencySymbol}${loan.amount}`,
             tasaMensual: `${loan.monthlyInterestRate}%`,
             cuotasPagadas: `${loan.paidInstallments}/${loan.totalInstallments}`,
@@ -160,7 +178,7 @@ export function Reports() {
           data: loanInterests,
           total: loanInterests.reduce((sum, l) => sum + l.interesRetenido, 0),
           columns: [
-            { key: 'socio', header: 'Socio' },
+            { key: 'socio', header: 'Socio', align: 'left' as const, render: renderMember },
             { key: 'prestamo', header: 'Préstamo' },
             { key: 'tasaMensual', header: 'Tasa Mensual' },
             { key: 'cuotasPagadas', header: 'Cuotas Pagadas' },
@@ -174,15 +192,21 @@ export function Reports() {
           t.type === 'loan_payment' && filterByMonth(t.date)
         );
         return {
-          data: loanPayments.map(t => ({
-            id: t.id,
-            descripcion: t.description,
-            monto: t.amount,
-            fecha: t.date,
-          })),
+          data: loanPayments.map(t => {
+            const loan = loans.find((item) => item.id === t.referenceId);
+            return {
+              id: t.id,
+              socio: loan?.memberName || 'Desconocido',
+              memberId: loan?.memberId,
+              descripcion: t.description,
+              monto: t.amount,
+              fecha: t.date,
+            };
+          }),
           total: loanPayments.reduce((sum, t) => sum + t.amount, 0),
           columns: [
-            { key: 'descripcion', header: 'Descripción' },
+            { key: 'socio', header: 'Socio', align: 'left' as const, render: renderMember },
+            { key: 'descripcion', header: 'Descripción', align: 'left' as const },
             { key: 'monto', header: 'Monto', align: 'right' as const, render: (row: any) => formatCurrency(row.monto, config.currencyCode) },
             { key: 'fecha', header: 'Fecha', render: (row: any) => formatDate(row.fecha) },
           ],
@@ -199,6 +223,7 @@ export function Reports() {
             return {
               id: c.id,
               socio: member?.name || 'Desconocido',
+              memberId: c.memberId,
               mes: c.month,
               multa: c.penaltyAmount,
               fechaPago: c.paidDate || c.createdAt,
@@ -206,8 +231,8 @@ export function Reports() {
           }),
           total: penaltyContributions.reduce((sum, c) => sum + c.penaltyAmount, 0),
           columns: [
-            { key: 'socio', header: 'Socio' },
-            { key: 'mes', header: 'Mes' },
+            { key: 'socio', header: 'Socio', align: 'left' as const, render: renderMember },
+            { key: 'mes', header: 'Mes', render: (row: { mes: string }) => formatMonthName(row.mes) },
             { key: 'multa', header: 'Multa', align: 'right' as const, render: (row: any) => formatCurrency(row.multa, config.currencyCode) },
             { key: 'fechaPago', header: 'Fecha Pago', render: (row: any) => formatDate(row.fechaPago) },
           ],
@@ -222,13 +247,14 @@ export function Reports() {
           data: filtered.map(r => ({
             id: r.id,
             socio: r.memberName,
+            memberId: r.memberId,
             motivo: r.reason,
             monto: r.amount,
             fecha: r.createdAt,
           })),
           total: filtered.reduce((sum, r) => sum + r.amount, 0),
           columns: [
-            { key: 'socio', header: 'Socio' },
+            { key: 'socio', header: 'Socio', align: 'left' as const, render: renderMember },
             { key: 'motivo', header: 'Motivo' },
             { key: 'monto', header: 'Monto', align: 'right' as const, render: (row: any) => formatCurrency(row.monto, config.currencyCode) },
             { key: 'fecha', header: 'Fecha', render: (row: any) => formatDate(row.fecha) },
@@ -241,77 +267,94 @@ export function Reports() {
     }
   }, [selectedReport, selectedMonth, contributions, loans, transactions, members, config, refunds]);
 
-  const currentReportOption = reportOptions.find(r => r.value === selectedReport);
+  const filteredReportData = useMemo(() => {
+    const query = reportSearch.trim().toLowerCase();
+    if (!query) return reportData.data;
+
+    return reportData.data.filter((row) =>
+      Object.values(row).some((value) => String(value).toLowerCase().includes(query)),
+    );
+  }, [reportData.data, reportSearch]);
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Título */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Reportes</h1>
-          <p className="text-muted-foreground mt-1">Informes y estadísticas de la cooperativa</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Reportes"
+        description="Informes y estadísticas de la cooperativa"
+      />
 
-      {/* Selector tipo de reporte (pills) */}
-      <div className="flex flex-wrap items-center gap-1 bg-muted rounded-lg p-1">
-        {reportOptions.map(option => (
-          <button
-            key={option.value}
-            onClick={() => setSelectedReport(option.value)}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              selectedReport === option.value
-                ? 'bg-black text-white dark:bg-white dark:text-black'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
 
-      {/* Filtro de mes + Total */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <Select
-          value={selectedMonth}
-          onValueChange={(value) => setSelectedMonth(value)}
-        >
-          <SelectTrigger className="w-56">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {monthOptions.map(o => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <div className="flex items-center gap-3 text-sm">
-          <span className="text-muted-foreground">Total:</span>
-          <span className="text-xl font-bold text-foreground">
-            {formatCurrency(reportData.total, config.currencyCode)}
-          </span>
-          {reportData.data.length > 0 && (
-            <>
-              <span className="text-muted-foreground">·</span>
-              <span className="text-muted-foreground">{reportData.data.length} registros</span>
-              <span className="text-muted-foreground">·</span>
-              <span className="text-muted-foreground">
-                Promedio: {formatCurrency(reportData.total / reportData.data.length, config.currencyCode)}
-              </span>
-            </>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard
+          label="Monto total"
+          value={formatCurrency(reportData.total, config.currencyCode)}
+          description={reportOptions.find((report) => report.value === selectedReport)?.label}
+          icon={DollarSign}
+        />
+        <StatCard
+          label="Registros"
+          value={reportData.data.length}
+          description={selectedMonth === 'all' ? 'Todos los meses' : monthOptions.find((month) => month.value === selectedMonth)?.label}
+          icon={FileText}
+        />
+        <StatCard
+          label="Promedio por registro"
+          value={formatCurrency(
+            reportData.data.length > 0 ? reportData.total / reportData.data.length : 0,
+            config.currencyCode,
           )}
-        </div>
+          description="Según los registros seleccionados"
+          icon={Percent}
+        />
       </div>
 
       {/* Tabla de datos */}
       <DataTable
-        data={reportData.data}
+        data={filteredReportData}
         columns={reportData.columns}
         keyExtractor={(row: { id: string }) => row.id}
-        emptyMessage="No hay datos para mostrar en este reporte"
+        searchValue={reportSearch}
+        onSearchChange={setReportSearch}
+        searchPlaceholder="Buscar en el reporte..."
+        toolbar={(
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+            <Select
+              value={selectedReport}
+              onValueChange={(value) => {
+                setSelectedReport(value as ReportType);
+                setReportSearch("");
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {reportOptions.map((report) => (
+                  <SelectItem key={report.value} value={report.value}>
+                    {report.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={selectedMonth}
+              onValueChange={(value) => setSelectedMonth(value)}
+            >
+              <SelectTrigger className="w-full sm:w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {monthOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        emptyMessage="No hay registros que coincidan con la búsqueda"
       />
     </div>
   );
