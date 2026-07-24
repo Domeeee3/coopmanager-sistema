@@ -20,28 +20,30 @@ export function FormModal({
     className,
     children,
 }: FormModalProps) {
+    const formId = React.useId();
+
     return (
         <Modal isOpen={isOpen} onOpenChange={(open) => !open && onClose()}>
             <Modal.Backdrop variant="blur">
-                <Modal.Container scroll="inside" className={className ?? 'sm:max-w-md'}>
-                    <Modal.Dialog>
-                        <form onSubmit={(e) => { e.preventDefault(); onSubmit(e); }}>
-                            <Modal.Header>
-                                <Modal.Heading>{title}</Modal.Heading>
-                                <Modal.CloseTrigger aria-label="Cerrar formulario" />
-                            </Modal.Header>
-                            <Modal.Body className="space-y-4">
+                <Modal.Container scroll="inside">
+                    <Modal.Dialog className={['w-[calc(100vw-2rem)]', className ?? 'sm:max-w-md'].join(' ')}>
+                        <Modal.Header>
+                            <Modal.Heading>{title}</Modal.Heading>
+                            <Modal.CloseTrigger aria-label="Cerrar formulario" />
+                        </Modal.Header>
+                        <Modal.Body className="space-y-4">
+                            <form id={formId} onSubmit={(event) => { event.preventDefault(); onSubmit(event); }}>
                                 {children}
-                            </Modal.Body>
-                            <Modal.Footer className="gap-3">
-                                <Button type="button" variant="outline" onPress={onClose}>
-                                    Cancelar
-                                </Button>
-                                <Button type="submit">
-                                    {submitText}
-                                </Button>
-                            </Modal.Footer>
-                        </form>
+                            </form>
+                        </Modal.Body>
+                        <Modal.Footer className="gap-3">
+                            <Button type="button" variant="outline" onPress={onClose}>
+                                Cancelar
+                            </Button>
+                            <Button type="submit" form={formId}>
+                                {submitText}
+                            </Button>
+                        </Modal.Footer>
                     </Modal.Dialog>
                 </Modal.Container>
             </Modal.Backdrop>

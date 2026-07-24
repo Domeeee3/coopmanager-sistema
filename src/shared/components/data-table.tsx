@@ -98,10 +98,11 @@ export function DataTable<T>({
         <Table.ScrollContainer className={tableStyles.scroll}>
           <Table.Content aria-label="Tabla de datos" className={usesFixedLayout ? 'table-fixed' : undefined}>
             <Table.Header className={tableStyles.header}>
-              {columns.map((column) => (
+              {columns.map((column, index) => (
                 <Table.Column
                   key={column.key}
                   id={column.key}
+                  isRowHeader={index === 0}
                   className={`${tableStyles.column} ${alignmentClass(column.align)}`}
                   style={{ width: column.width }}
                 >

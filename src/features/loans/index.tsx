@@ -745,7 +745,7 @@ export function Loans() {
                 <Table.ScrollContainer className={tableStyles.scroll}>
                   <Table.Content aria-label="Tabla de Amortización">
                     <Table.Header className={tableStyles.header}>
-                      <Table.Column id="installment" className={tableStyles.column}>#</Table.Column>
+                      <Table.Column id="installment" isRowHeader className={tableStyles.column}>#</Table.Column>
                       <Table.Column id="fecha" className={tableStyles.column}>Fecha</Table.Column>
                       <Table.Column id="capital" className={tableStyles.column + " text-right"}>Capital</Table.Column>
                       <Table.Column id="inter-s" className={tableStyles.column + " text-right"}>Interés</Table.Column>
@@ -809,173 +809,193 @@ export function Loans() {
         onSubmit={handleSubmit}
         title="Nuevo Préstamo"
         submitText="Aprobar Préstamo"
-        className="sm:max-w-2xl"
+        className="sm:max-w-6xl"
       >
-        <div className="space-y-4">
-          <Select
-            fullWidth
-            placeholder="Seleccionar socio..."
-            selectedKey={formData.memberId || null}
-            onSelectionChange={(key) => setFormData({ ...formData, memberId: String(key) })}
-          >
-            <Label>Socio <span className="text-destructive" aria-hidden="true">*</span></Label>
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {memberOptions.map(opt => (
-                  <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
-                    {opt.label}
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
-          <TextField fullWidth type="number">
-            <Label>Monto <span className="text-destructive" aria-hidden="true">*</span></Label>
-            <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                value={formData.amount || ''}
-                onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
-                className="pl-9"
-              />
-            </div>
-          </TextField>
-          <Select
-            fullWidth
-            selectedKey={String(formData.monthlyInterestRate)}
-            onSelectionChange={(key) => setFormData({ ...formData, monthlyInterestRate: parseFloat(String(key)) })}
-          >
-            <Label>Tasa de Interés Mensual</Label>
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                <ListBox.Item id="1" textValue="1%">1%<ListBox.ItemIndicator /></ListBox.Item>
-                <ListBox.Item id="2" textValue="2%">2%<ListBox.ItemIndicator /></ListBox.Item>
-              </ListBox>
-            </Select.Popover>
-          </Select>
-          <TextField fullWidth type="number">
-            <Label>Plazo (meses)</Label>
-            <Input
-              value={formData.termMonths || ''}
-              onChange={(e) => setFormData({ ...formData, termMonths: parseInt(e.target.value) || 0 })}
-            />
-          </TextField>
-          <DatePicker
-            label="Fecha de inicio"
-            value={formData.startDate}
-            onChange={(value) => setFormData({ ...formData, startDate: value })}
-          />
-          <TextField fullWidth>
-            <Label>Notas</Label>
-            <TextArea
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-            />
-          </TextField>
-        </div>
-
-        {/* Checkbox para confirmar retención pagada */}
-        <div className="mt-4">
-          <Checkbox
-            isSelected={formData.retentionPaid}
-            onChange={(checked) => setFormData({ ...formData, retentionPaid: checked })}
-            className="w-full p-3 bg-warning/10 border border-warning/30 rounded-[var(--radius)] hover:bg-warning/15 transition-colors"
-          >
-            <Checkbox.Content className="flex items-center gap-3">
-              <Checkbox.Control>
-                <Checkbox.Indicator />
-              </Checkbox.Control>
-              <div>
-                <span className="text-sm font-medium text-foreground">
-                  Confirmar pago de retención por suministros
-                </span>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Marque esta casilla si el socio ya pagó la retención de {formatCurrency(formData.amount * formData.monthlyInterestRate / 100, config.currencyCode)} ({formatPercentage(formData.monthlyInterestRate)} del monto del préstamo).
-                </p>
-              </div>
-            </Checkbox.Content>
-          </Checkbox>
-        </div>
-
-        {simulatedLoan && formData.amount > 0 && (
-          <div className="mt-4 space-y-3">
-            {/* Resumen rápido */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4 rounded-[var(--radius)] border border-border bg-muted text-sm">
-              <div>
-                <p className="text-muted-foreground">Retención</p>
-                <p className="font-bold text-foreground">{formatCurrency(formData.amount * formData.monthlyInterestRate / 100, config.currencyCode)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Cuota mensual</p>
-                <p className="font-bold text-foreground">{formatCurrency(simulatedLoan.monthlyPayment, config.currencyCode)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Interés total</p>
-                <p className="font-bold text-foreground">{formatCurrency(simulatedLoan.totalInterest, config.currencyCode)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Gastos de transferencia</p>
-                <p className="font-bold text-foreground">
-                  {formatCurrency(simulatedLoan.totalTransferFees, config.currencyCode)} total
-                  <br />
-                  <span className="text-sm font-normal text-muted-foreground">
-                    {formatCurrency(config.transferFee, config.currencyCode)} / cuota
-                  </span>
-                </p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Total a pagar</p>
-                <p className="font-bold text-foreground">
-                  {formatCurrency(
-                    simulatedLoan.monthlyPayment * formData.termMonths,
-                    config.currencyCode
-                  )}
-                </p>
-              </div>
-            </div>
-
-            {/* Tabla de amortización */}
-            <div className="max-h-52 overflow-y-auto">
-              <Table className={tableStyles.root}>
-                <Table.ScrollContainer className={tableStyles.scroll}>
-                  <Table.Content aria-label="Tabla de amortización simulada">
-                    <Table.Header className={tableStyles.header}>
-                    <Table.Column id="installment" className={tableStyles.column + " sticky top-0 z-10"}>#</Table.Column>
-                    <Table.Column id="fecha" className={tableStyles.column + " sticky top-0 z-10"}>Fecha</Table.Column>
-                    <Table.Column id="capital" className={tableStyles.column + " text-right"}>Capital</Table.Column>
-                    <Table.Column id="inter-s" className={tableStyles.column + " text-right"}>Interés</Table.Column>
-                    <Table.Column id="transfer" className={tableStyles.column + " text-right"}>Transfer.</Table.Column>
-                    <Table.Column id="cuota" className={tableStyles.column + " sticky top-0 z-10 text-right"}>Cuota</Table.Column>
-                    <Table.Column id="saldo" className={tableStyles.column + " text-right"}>Saldo</Table.Column>
-                </Table.Header>
-                <Table.Body>
-                  {simulatedLoan.schedule.map((entry) => (
-                    <Table.Row key={entry.installmentNumber} id={String(entry.installmentNumber)} className={tableStyles.row}>
-                      <Table.Cell className={tableStyles.cell}>{entry.installmentNumber}</Table.Cell>
-                      <Table.Cell className={tableStyles.cell}>{formatDate(entry.dueDate)}</Table.Cell>
-                      <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.principal, config.currencyCode)}</Table.Cell>
-                      <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.interest, config.currencyCode)}</Table.Cell>
-                      <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.transferFee || 0, config.currencyCode)}</Table.Cell>
-                      <Table.Cell className={tableStyles.cell + " text-right font-medium"}>{formatCurrency(entry.payment, config.currencyCode)}</Table.Cell>
-                      <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.balance, config.currencyCode)}</Table.Cell>
-                    </Table.Row>
+        <div className="grid gap-6 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="space-y-4">
+            <Select
+              fullWidth
+              placeholder="Seleccionar socio..."
+              selectedKey={formData.memberId || null}
+              onSelectionChange={(key) => setFormData({ ...formData, memberId: String(key) })}
+            >
+              <Label>Socio <span className="text-destructive" aria-hidden="true">*</span></Label>
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  {memberOptions.map(opt => (
+                    <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
+                      {opt.label}
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
                   ))}
-                    </Table.Body>
-                  </Table.Content>
-                </Table.ScrollContainer>
-              </Table>
-            </div>
+                </ListBox>
+              </Select.Popover>
+            </Select>
+
+            <TextField fullWidth type="number">
+              <Label>Monto <span className="text-destructive" aria-hidden="true">*</span></Label>
+              <div className="relative">
+                <DollarSign className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={formData.amount || ''}
+                  onChange={(event) => setFormData({ ...formData, amount: parseFloat(event.target.value) || 0 })}
+                  className="pl-9"
+                />
+              </div>
+            </TextField>
+
+            <Select
+              fullWidth
+              selectedKey={String(formData.monthlyInterestRate)}
+              onSelectionChange={(key) => setFormData({ ...formData, monthlyInterestRate: parseFloat(String(key)) })}
+            >
+              <Label>Tasa de Interés Mensual</Label>
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  <ListBox.Item id="1" textValue="1%">1%<ListBox.ItemIndicator /></ListBox.Item>
+                  <ListBox.Item id="2" textValue="2%">2%<ListBox.ItemIndicator /></ListBox.Item>
+                </ListBox>
+              </Select.Popover>
+            </Select>
+
+            <TextField fullWidth type="number">
+              <Label>Plazo (meses)</Label>
+              <Input
+                value={formData.termMonths || ''}
+                onChange={(event) => setFormData({ ...formData, termMonths: parseInt(event.target.value) || 0 })}
+              />
+            </TextField>
+
+            <DatePicker
+              label="Fecha de inicio"
+              value={formData.startDate}
+              onChange={(value) => setFormData({ ...formData, startDate: value })}
+            />
+
+            <TextField fullWidth>
+              <Label>Notas</Label>
+              <TextArea
+                value={formData.notes}
+                onChange={(event) => setFormData({ ...formData, notes: event.target.value })}
+              />
+            </TextField>
+
+            <Checkbox
+              isSelected={formData.retentionPaid}
+              onChange={(checked) => setFormData({ ...formData, retentionPaid: checked })}
+              className="w-full rounded-[var(--radius)] border border-warning/30 bg-warning/10 p-3 transition-colors hover:bg-warning/15"
+            >
+              <Checkbox.Content className="flex items-center gap-3">
+                <Checkbox.Control>
+                  <Checkbox.Indicator />
+                </Checkbox.Control>
+                <div>
+                  <span className="text-sm font-medium text-foreground">
+                    Confirmar pago de retención por suministros
+                  </span>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Marque esta casilla si el socio ya pagó la retención de {formatCurrency(formData.amount * formData.monthlyInterestRate / 100, config.currencyCode)} ({formatPercentage(formData.monthlyInterestRate)} del monto del préstamo).
+                  </p>
+                </div>
+              </Checkbox.Content>
+            </Checkbox>
           </div>
-        )}
+
+          <aside className="min-w-0 rounded-[var(--radius)] border border-border bg-muted/35 p-4">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="grid size-9 shrink-0 place-items-center rounded-[var(--radius)] bg-primary/10 text-primary">
+                <Calculator className="size-4" aria-hidden="true" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Simulación del préstamo</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">Los valores se actualizan al modificar el monto, tasa o plazo.</p>
+              </div>
+            </div>
+
+            {simulatedLoan && formData.amount > 0 ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 rounded-[var(--radius)] border border-border bg-background p-3 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Retención</p>
+                    <p className="font-semibold tabular-nums text-foreground">{formatCurrency(formData.amount * formData.monthlyInterestRate / 100, config.currencyCode)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Cuota mensual</p>
+                    <p className="font-semibold tabular-nums text-foreground">{formatCurrency(simulatedLoan.monthlyPayment, config.currencyCode)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Interés total</p>
+                    <p className="font-semibold tabular-nums text-foreground">{formatCurrency(simulatedLoan.totalInterest, config.currencyCode)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Transferencias</p>
+                    <p className="font-semibold tabular-nums text-foreground">{formatCurrency(simulatedLoan.totalTransferFees, config.currencyCode)}</p>
+                    <p className="text-xs text-muted-foreground">{formatCurrency(config.transferFee, config.currencyCode)} / cuota</p>
+                  </div>
+                  <div className="col-span-2 border-t border-border pt-3">
+                    <p className="text-muted-foreground">Total a pagar</p>
+                    <p className="text-lg font-semibold tabular-nums text-foreground">
+                      {formatCurrency(simulatedLoan.monthlyPayment * formData.termMonths, config.currencyCode)}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h4 className="text-sm font-medium text-foreground">Cuotas proyectadas</h4>
+                    <span className="text-xs text-muted-foreground">{formData.termMonths} meses</span>
+                  </div>
+                  <div className="max-h-72 overflow-auto rounded-[var(--radius)] border border-border bg-background">
+                    <Table className={tableStyles.root}>
+                      <Table.ScrollContainer className={tableStyles.scroll}>
+                        <Table.Content aria-label="Tabla de amortización simulada">
+                          <Table.Header className={tableStyles.header}>
+                            <Table.Column id="installment" isRowHeader className={tableStyles.column}>#</Table.Column>
+                            <Table.Column id="fecha" className={tableStyles.column}>Fecha</Table.Column>
+                            <Table.Column id="capital" className={tableStyles.column + " text-right"}>Capital</Table.Column>
+                            <Table.Column id="inter-s" className={tableStyles.column + " text-right"}>Interés</Table.Column>
+                            <Table.Column id="transfer" className={tableStyles.column + " text-right"}>Transfer.</Table.Column>
+                            <Table.Column id="cuota" className={tableStyles.column + " text-right"}>Cuota</Table.Column>
+                            <Table.Column id="saldo" className={tableStyles.column + " text-right"}>Saldo</Table.Column>
+                          </Table.Header>
+                          <Table.Body>
+                            {simulatedLoan.schedule.map((entry) => (
+                              <Table.Row key={entry.installmentNumber} id={String(entry.installmentNumber)} className={tableStyles.row}>
+                                <Table.Cell className={tableStyles.cell}>{entry.installmentNumber}</Table.Cell>
+                                <Table.Cell className={tableStyles.cell}>{formatDate(entry.dueDate)}</Table.Cell>
+                                <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.principal, config.currencyCode)}</Table.Cell>
+                                <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.interest, config.currencyCode)}</Table.Cell>
+                                <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.transferFee || 0, config.currencyCode)}</Table.Cell>
+                                <Table.Cell className={tableStyles.cell + " text-right font-medium"}>{formatCurrency(entry.payment, config.currencyCode)}</Table.Cell>
+                                <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.balance, config.currencyCode)}</Table.Cell>
+                              </Table.Row>
+                            ))}
+                          </Table.Body>
+                        </Table.Content>
+                      </Table.ScrollContainer>
+                    </Table>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="grid min-h-56 place-items-center rounded-[var(--radius)] border border-dashed border-border bg-background/60 p-6 text-center">
+                <div>
+                  <Calculator className="mx-auto size-7 text-muted-foreground" aria-hidden="true" />
+                  <p className="mt-3 text-sm font-medium text-foreground">Ingresa el monto del préstamo</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Aquí aparecerán el valor de las cuotas y el calendario de pagos.</p>
+                </div>
+              </div>
+            )}
+          </aside>
+        </div>
       </FormModal>
 
       {/* Modal de pago */}
