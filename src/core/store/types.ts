@@ -146,7 +146,7 @@ export interface AppContextValue extends AppState {
   payLoanInstallment: (loanId: string, installmentNumber: number, payment: LoanPaymentData) => void;
   updateLoanPayment: (loanId: string, installmentNumber: number, payment: LoanPaymentData) => void;
   deleteLoanPayment: (loanId: string, installmentNumber: number) => void;
-  refinanceLoan: (loanId: string, newTermMonths: number) => Loan;
+  refinanceLoan: (loanId: string, newPendingInstallments: number) => void;
 
   // Aportes
   addContribution: (data: ContributionFormData) => Contribution;

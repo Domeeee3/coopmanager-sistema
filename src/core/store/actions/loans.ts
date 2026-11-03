@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Loan, LoanFormData, LoanPaymentData, Transaction } from '../../types';
 import { ActionHelpers } from '../types';
 import { calculateFrenchAmortization } from '../../hooks/useFinance';
-import { applySchedule, canEditLoanTerms, getInstallmentCharge, getLoanSchedule, isInstallmentPaid, loanHasPayments } from '../../lib/loans';
+import { applySchedule, buildRefinancePlan, canEditLoanTerms, getInstallmentCharge, getLoanSchedule, isInstallmentPaid, loanHasPayments } from '../../lib/loans';
 import { formatCurrency } from '../../lib/formatters';
 
 const roundCents = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
@@ -352,30 +352,25 @@ export function createLoanActions(
     showToast('success', 'Pago eliminado', `Se retiraron ${money(removedAmount)} de la caja. Saldo pendiente: ${money(updatedLoan.remainingPrincipal)}`);
   };
 
-  const refinanceLoan = (loanId: string, newTermMonths: number): Loan => {
-    const state = getState();
-    const oldLoan = state.loans.find(l => l.id === loanId);
-    if (!oldLoan || oldLoan.status !== 'active') {
-      showToast('error', 'Error', 'No se puede refinanciar este préstamo.');
-      throw new Error('No se puede refinanciar');
+  /** Alarga el plazo del mismo préstamo (ver buildRefinancePlan). No mueve la caja. */
+  const refinanceLoan = (loanId: string, newPendingInstallments: number) => {
+    const loan = getState().loans.find(l => l.id === loanId);
+    if (!loan) return;
+
+    const plan = buildRefinancePlan(loan, newPendingInstallments);
+    if (!plan) {
+      showToast('error', 'No se puede refinanciar', 'El nuevo número de cuotas debe ser mayor que las cuotas pendientes de un préstamo vigente.');
+      return;
     }
 
-    const refinancedLoan: Loan = { ...oldLoan, status: 'refinanced' };
-    dispatch({ type: 'UPDATE_LOAN', payload: refinancedLoan });
-
-    const newLoan = deps.addLoanRef.current!({
-      memberId: oldLoan.memberId,
-      amount: oldLoan.remainingPrincipal,
-      monthlyInterestRate: state.config.monthlyInterestRate,
-      termMonths: newTermMonths,
-      startDate: new Date().toISOString().split('T')[0],
-      notes: `Refinanciación del préstamo ${oldLoan.id}`,
-    }, { notify: false });
-
-    // getState() aún no incluye el préstamo recién creado: se actualiza directamente
-    dispatch({ type: 'UPDATE_LOAN', payload: { ...newLoan, refinancedFromId: loanId } });
-    showToast('success', 'Préstamo refinanciado', `Nuevo préstamo creado con ${newTermMonths} cuotas.`);
-    return newLoan;
+    dispatch({ type: 'UPDATE_LOAN', payload: plan.loan });
+    logActivity(
+      'loan_refinance',
+      `Préstamo refinanciado: ${loan.memberName} - ${plan.currentPendingInstallments} → ${plan.newPendingInstallments} cuotas pendientes (+${money(plan.extraInterest)} interés)`,
+      { loanId, before: loan, plan: { ...plan, loan: undefined } },
+      loanId,
+    );
+    showToast('success', 'Préstamo refinanciado', `${plan.newPendingInstallments} cuotas pendientes de ${money(plan.monthlyPayment)}. Saldo pendiente: ${money(plan.newBalance)}.`);
   };
 
   return {

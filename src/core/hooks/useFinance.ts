@@ -50,6 +50,32 @@ function splitTransfer(transferCents: number, totalCents: number, principalRows:
   return rows.every((value) => value >= 0) ? rows : splitWithRemainderLast(transferCents, parts);
 }
 
+export interface InstallmentRowCents {
+  principal: number;
+  interest: number;
+  transferFee: number;
+  payment: number;
+}
+
+/**
+ * Reparte capital, interés y transferencia (en centavos) en `count` cuotas:
+ * capital e interés en partes iguales con el sobrante en la última, y la
+ * transferencia ajustada para que todas las cuotas salvo la última sean iguales.
+ */
+export function buildInstallmentRows(principalCents: number, interestCents: number, transferCents: number, count: number): InstallmentRowCents[] {
+  const parts = Math.max(1, Math.floor(count) || 1);
+  const totalCents = principalCents + interestCents + transferCents;
+  const principalRows = splitWithRemainderLast(principalCents, parts);
+  const interestRows = splitWithRemainderLast(interestCents, parts);
+  const transferRows = splitTransfer(transferCents, totalCents, principalRows, interestRows);
+  return principalRows.map((principal, index) => ({
+    principal,
+    interest: interestRows[index],
+    transferFee: transferRows[index],
+    payment: principal + interestRows[index] + transferRows[index],
+  }));
+}
+
 /**
  * Calcula la tabla de pagos de un préstamo.
  *
@@ -78,30 +104,24 @@ export function calculateFrenchAmortization(
   const transferCents = Math.max(0, toCents(transferFee));
   const totalCents = principalCents + interestCents + transferCents;
 
-  const principalRows = splitWithRemainderLast(principalCents, months);
-  const interestRows = splitWithRemainderLast(interestCents, months);
-  const transferRows = splitTransfer(transferCents, totalCents, principalRows, interestRows);
-
-  const schedule: AmortizationEntry[] = [];
+  const rows = buildInstallmentRows(principalCents, interestCents, transferCents, months);
   const startDateObj = parseISO(startDate);
   let remainingCents = totalCents;
 
-  for (let index = 0; index < months; index++) {
-    const paymentCents = principalRows[index] + interestRows[index] + transferRows[index];
-    remainingCents -= paymentCents;
-
-    schedule.push({
+  const schedule: AmortizationEntry[] = rows.map((row, index) => {
+    remainingCents -= row.payment;
+    return {
       installmentNumber: index + 1,
       dueDate: format(addMonths(startDateObj, index + 1), 'yyyy-MM-dd'),
-      principal: fromCents(principalRows[index]),
-      interest: fromCents(interestRows[index]),
-      transferFee: fromCents(transferRows[index]),
-      payment: fromCents(paymentCents),
+      principal: fromCents(row.principal),
+      interest: fromCents(row.interest),
+      transferFee: fromCents(row.transferFee),
+      payment: fromCents(row.payment),
       // Saldo pendiente total (capital + interés + transferencia) tras esta cuota
       balance: fromCents(Math.max(0, remainingCents)),
       status: 'pending',
-    });
-  }
+    };
+  });
 
   return {
     // Cuota fija = valor de las cuotas (la última sólo ajusta centavos)

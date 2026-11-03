@@ -321,11 +321,10 @@ export function Loans() {
     setPaymentToDelete(null);
   };
 
-  const handleRefinanceSubmit = (newTermMonths: number) => {
+  const handleRefinanceSubmit = (newPendingInstallments: number) => {
     if (selectedLoan) {
-      refinanceLoan(selectedLoan.id, newTermMonths);
+      refinanceLoan(selectedLoan.id, newPendingInstallments);
       setShowRefinance(false);
-      setViewMode('member-loans');
     }
   };
 
@@ -765,7 +764,7 @@ export function Loans() {
                   <DollarSign className="w-4 h-4 mr-2" />
                   {nextPendingInstallment ? `Registrar pago (cuota ${nextPendingInstallment.installmentNumber})` : 'Préstamo pagado'}
                 </Button>
-                {selectedLoan.status === 'active' && (
+                {isLoanOpen(selectedLoan) && nextPendingInstallment && (
                   <Button variant="secondary" onPress={() => setShowRefinance(true)}>
                     <RefreshCw className="w-4 h-4 mr-2" />
                     Refinanciar
