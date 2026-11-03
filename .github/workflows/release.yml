@@ -1,0 +1,46 @@
+name: Release desktop
+
+# Publica una versión al subir una etiqueta como v1.2.0.
+# Genera el instalador de Windows y lo sube a GitHub Releases junto con
+# latest.yml, que la app instalada usa para actualizarse sola.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Check tag matches package.json version
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "La etiqueta ${GITHUB_REF_NAME} no coincide con la versión v${version} de package.json." >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and publish installer
+        run: pnpm release:desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

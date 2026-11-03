@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { app, BrowserWindow, ipcMain, protocol } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, protocol } = require('electron');
 const { SqliteKeyValueStore } = require('./storage.cjs');
 
 protocol.registerSchemesAsPrivileged([
@@ -205,10 +205,60 @@ function registerIpcHandlers() {
   });
 }
 
+// Actualizaciones automáticas desde GitHub Releases (sólo en la app instalada).
+// Descarga la nueva versión en segundo plano y la instala al reiniciar.
+function setupAutoUpdates() {
+  if (isDev()) return;
+
+  let autoUpdater;
+  try {
+    ({ autoUpdater } = require('electron-updater'));
+  } catch (error) {
+    console.error('[updates] electron-updater no disponible:', error);
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('error', (error) => {
+    // Sin internet o sin versiones publicadas: la app sigue funcionando normalmente.
+    console.error('[updates] Error al buscar actualizaciones:', error?.message || error);
+  });
+
+  autoUpdater.on('update-downloaded', async (info) => {
+    const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    const options = {
+      type: 'info',
+      buttons: ['Reiniciar ahora', 'Más tarde'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Actualización disponible',
+      message: `CoopManager ${info.version} está lista para instalarse.`,
+      detail: 'Sus datos se conservan. Si elige "Más tarde", la actualización se instalará al cerrar la aplicación.',
+    };
+    const { response } = window ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options);
+    if (response === 0) {
+      try {
+        store?.close();
+        store = null;
+      } catch {
+        // ignore
+      }
+      autoUpdater.quitAndInstall();
+    }
+  });
+
+  autoUpdater.checkForUpdates().catch((error) => {
+    console.error('[updates] No se pudo buscar actualizaciones:', error?.message || error);
+  });
+}
+
 app.whenReady().then(async () => {
   registerProfilePhotoProtocol();
   registerIpcHandlers();
   await createWindow();
+  setupAutoUpdates();
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {

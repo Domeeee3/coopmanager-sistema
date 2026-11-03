@@ -1,7 +1,7 @@
 {
   "name": "coopmanager",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "main": "electron/main.cjs",
   "author": "CoopManager",
@@ -16,7 +16,8 @@
     "build:desktop": "pnpm build && pnpm exec electron-builder --win --config",
     "preview": "vite preview",
     "preview:desktop": "cross-env COOP_DESKTOP=1 electron electron/main.cjs",
-    "seed:demo": "cross-env ELECTRON_RUN_AS_NODE=1 electron scripts/seed-demo-data.cjs"
+    "seed:demo": "cross-env ELECTRON_RUN_AS_NODE=1 electron scripts/seed-demo-data.cjs",
+    "release:desktop": "pnpm build && pnpm exec electron-builder --win --publish always"
   },
   "build": {
     "appId": "com.coopmanager.app",
@@ -48,11 +49,20 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": false,
       "deleteAppDataOnUninstall": false,
-      "shortcutName": "CoopManager"
+      "shortcutName": "CoopManager",
+      "artifactName": "CoopManager-Setup-${version}.${ext}"
     },
     "asar": true,
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Domeeee3",
+        "repo": "coopmanager-sistema",
+        "releaseType": "release"
+      }
     ]
   },
   "dependencies": {
@@ -76,6 +86,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
+    "electron-updater": "^6.8.11",
     "localforage": "^1.10.0",
     "lucide-react": "^1.24.0",
     "next-themes": "^0.4.6",

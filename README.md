@@ -2,7 +2,7 @@
 
 Aplicación de escritorio para administrar socios, aportes, préstamos, gastos, caja y respaldos de una cooperativa.
 
-> **¿Solo desea usar la aplicación?** No necesita instalar Node.js ni ejecutar comandos. Pida o descargue el archivo `CoopManager Setup ... .exe` y siga la sección [Instalar CoopManager](#instalar-coopmanager-en-windows).
+> **¿Solo desea usar la aplicación?** No necesita instalar Node.js ni ejecutar comandos. Descargue el archivo `CoopManager-Setup-....exe` desde [Releases](https://github.com/Domeeee3/coopmanager-sistema/releases/latest) y siga la sección [Instalar CoopManager](#instalar-coopmanager-en-windows).
 
 ---
 
@@ -10,17 +10,17 @@ Aplicación de escritorio para administrar socios, aportes, préstamos, gastos, 
 
 ### 1. Obtenga el instalador
 
-El archivo que debe recibir es similar a:
+Descargue la última versión desde la página de [Releases](https://github.com/Domeeee3/coopmanager-sistema/releases/latest). El archivo es similar a:
 
 ```text
-CoopManager Setup 1.0.0.exe
+CoopManager-Setup-1.1.0.exe
 ```
 
 No necesita abrir la carpeta del proyecto ni usar archivos `.zip`, `.json` o `.xlsx` para instalar el programa.
 
 ### 2. Ejecute el instalador
 
-1. Haga doble clic en el archivo `CoopManager Setup ... .exe`.
+1. Haga doble clic en el archivo `CoopManager-Setup-....exe`.
 2. Si Windows muestra una advertencia de seguridad, confirme que el archivo proviene de la persona u organización de confianza y seleccione **Más información** → **Ejecutar de todas formas**.
 3. Espere a que termine la instalación.
 4. Abra **CoopManager** desde el menú Inicio o el acceso directo del escritorio, si está disponible.
@@ -37,11 +37,38 @@ Documentos\CoopManager
 
 Antes de cambiar de computadora, formatear Windows o desinstalar la aplicación, cree un **Respaldo Excel** desde CoopManager.
 
+### 4. Actualizaciones automáticas
+
+Desde la versión 1.1.0, CoopManager busca nuevas versiones al abrirse (necesita conexión a internet). Si hay una, la descarga en segundo plano y muestra un aviso:
+
+- **Reiniciar ahora**: cierra la aplicación, instala la nueva versión y la vuelve a abrir.
+- **Más tarde**: la actualización se instala al cerrar CoopManager.
+
+Los datos de `Documentos\CoopManager` se conservan. Si tiene instalada la versión 1.0.0, instale una vez la 1.1.0 manualmente; a partir de ahí las actualizaciones son automáticas.
+
 ---
 
-# Generar el instalador `.exe`
+# Publicar una nueva versión
 
-Esta sección es para la persona responsable de preparar la aplicación y entregarla a los usuarios.
+Esta sección es para la persona responsable del desarrollo. GitHub genera el instalador en Windows y lo publica en Releases; las aplicaciones instaladas lo detectan solas.
+
+1. Cambie el número de `version` en `package.json` (por ejemplo, de `1.1.0` a `1.2.0`) y haga commit en `main`.
+2. Cree y suba la etiqueta con el mismo número:
+
+   ```sh
+   git tag v1.2.0
+   git push origin main v1.2.0
+   ```
+
+3. Revise el progreso en la pestaña **Actions** del repositorio. Al terminar, la versión aparece en **Releases** con el archivo `CoopManager-Setup-1.2.0.exe`.
+
+La etiqueta debe coincidir con la versión de `package.json`; si no coincide, la publicación se detiene sin publicar nada.
+
+---
+
+# Generar el instalador `.exe` manualmente
+
+Sólo es necesario si no se usa la publicación automática anterior.
 
 ## Requisitos
 
@@ -82,7 +109,7 @@ Para generar el instalador de Windows necesita:
 7. Busque el archivo con extensión `.exe`, normalmente con un nombre similar a:
 
    ```text
-   release\CoopManager Setup 1.0.0.exe
+   release\CoopManager-Setup-1.1.0.exe
    ```
 
 Ese archivo `.exe` es el que debe copiar, enviar o publicar para los usuarios. **No entregue la carpeta del proyecto ni la carpeta `win-unpacked`**.
