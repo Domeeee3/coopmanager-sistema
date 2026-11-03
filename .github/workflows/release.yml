@@ -2,7 +2,8 @@ name: Release desktop
 
 # Publica una versión al subir una etiqueta como v1.2.0.
 # Genera el instalador de Windows y lo sube a GitHub Releases junto con
-# latest.yml, que la app instalada usa para actualizarse sola.
+# latest.yml, que la app instalada usa para actualizarse sola. La versión se
+# crea como borrador y sólo se hace pública cuando todos los archivos subieron.
 on:
   push:
     tags:
@@ -19,11 +20,11 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -42,5 +43,11 @@ jobs:
 
       - name: Build and publish installer
         run: pnpm release:desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish release
+        shell: bash
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

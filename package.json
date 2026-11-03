@@ -61,7 +61,7 @@
         "provider": "github",
         "owner": "Domeeee3",
         "repo": "coopmanager-sistema",
-        "releaseType": "release"
+        "releaseType": "draft"
       }
     ]
   },

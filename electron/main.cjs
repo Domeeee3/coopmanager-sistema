@@ -239,12 +239,7 @@ function setupAutoUpdates() {
     };
     const { response } = window ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options);
     if (response === 0) {
-      try {
-        store?.close();
-        store = null;
-      } catch {
-        // ignore
-      }
+      // 'before-quit' cierra la base de datos antes de instalar.
       autoUpdater.quitAndInstall();
     }
   });

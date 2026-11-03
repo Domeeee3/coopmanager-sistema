@@ -60,7 +60,7 @@ Esta sección es para la persona responsable del desarrollo. GitHub genera el in
    git push origin main v1.2.0
    ```
 
-3. Revise el progreso en la pestaña **Actions** del repositorio. Al terminar, la versión aparece en **Releases** con el archivo `CoopManager-Setup-1.2.0.exe`.
+3. Revise el progreso en la pestaña **Actions** del repositorio. Al terminar, la versión aparece en **Releases** con el archivo `CoopManager-Setup-1.2.0.exe`. Si el proceso falla, la versión queda como borrador (no visible para las aplicaciones instaladas); bórrela desde Releases y vuelva a intentarlo.
 
 La etiqueta debe coincidir con la versión de `package.json`; si no coincide, la publicación se detiene sin publicar nada.
 
