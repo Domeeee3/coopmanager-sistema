@@ -41,6 +41,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # electron-builder sube varios archivos en paralelo; si la versión no
+      # existe, cada subida crea su propio borrador y los archivos quedan
+      # repartidos. Crear el borrador antes evita esa carrera.
+      - name: Create draft release
+        shell: bash
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --draft --title "${GITHUB_REF_NAME#v}" --notes "CoopManager ${GITHUB_REF_NAME#v}" --repo "$GITHUB_REPOSITORY"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build and publish installer
         run: pnpm release:desktop
         env:
@@ -48,6 +60,16 @@ jobs:
 
       - name: Publish release
         shell: bash
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest --repo "$GITHUB_REPOSITORY"
+        run: |
+          assets="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name')"
+          echo "$assets"
+          version="${GITHUB_REF_NAME#v}"
+          for file in "CoopManager-Setup-${version}.exe" "latest.yml"; do
+            if ! grep -qx "$file" <<<"$assets"; then
+              echo "Falta $file en la versión; no se publica." >&2
+              exit 1
+            fi
+          done
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
