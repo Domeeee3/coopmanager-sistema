@@ -41,35 +41,53 @@ function addMonths(date, months) {
   return new Date(Date.UTC(year, month - 1 + months, day)).toISOString().slice(0, 10);
 }
 
+// Mirrors calculateFrenchAmortization in src/core/hooks/useFinance.ts:
+// capital, interest and the total transfer fee are split evenly across the
+// installments (cumulative rounding, so every column sums exactly).
+function splitEvenly(totalCents, parts) {
+  const rows = [];
+  let previous = 0;
+  for (let index = 1; index <= parts; index++) {
+    const cumulative = Math.round((totalCents * index) / parts);
+    rows.push(cumulative - previous);
+    previous = cumulative;
+  }
+  return rows;
+}
+
 function calculateSchedule(amount, monthlyInterestRate, termMonths, startDate, transferFee) {
   const retention = amount * 0.01;
-  const totalInterest = amount * (monthlyInterestRate / 100) * termMonths;
-  const totalAmount = Math.round((amount + retention + totalInterest + transferFee) * 100) / 100;
-  const monthlyPayment = Math.ceil((totalAmount / termMonths) * 100) / 100;
-  const monthlyRate = monthlyInterestRate / 100;
-  let remainingBalance = amount;
+  const principalCents = Math.round(amount * 100);
+  const interestCents = Math.round(principalCents * monthlyInterestRate / 100 * termMonths);
+  const transferCents = Math.round(transferFee * 100);
+  const totalCents = principalCents + interestCents + transferCents;
+  const principalRows = splitEvenly(principalCents, termMonths);
+  const interestRows = splitEvenly(interestCents, termMonths);
+  const transferRows = splitEvenly(transferCents, termMonths);
+  let remainingCents = totalCents;
 
   const schedule = Array.from({ length: termMonths }, (_, index) => {
-    const installmentNumber = index + 1;
-    const interest = Math.round(remainingBalance * monthlyRate * 100) / 100;
-    const principal = Math.round((monthlyPayment - interest) * 100) / 100;
-    remainingBalance = Math.round((remainingBalance - principal) * 100) / 100;
-
-    if (installmentNumber === termMonths) remainingBalance = 0;
-
+    const paymentCents = principalRows[index] + interestRows[index] + transferRows[index];
+    remainingCents -= paymentCents;
     return {
-      installmentNumber,
-      dueDate: addMonths(startDate, installmentNumber),
-      principal,
-      interest,
-      transferFee,
-      payment: monthlyPayment,
-      balance: Math.max(0, remainingBalance),
+      installmentNumber: index + 1,
+      dueDate: addMonths(startDate, index + 1),
+      principal: principalRows[index] / 100,
+      interest: interestRows[index] / 100,
+      transferFee: transferRows[index] / 100,
+      payment: paymentCents / 100,
+      balance: Math.max(0, remainingCents) / 100,
       status: 'pending',
     };
   });
 
-  return { retention, totalInterest: Math.round(totalInterest * 100) / 100, totalAmount, monthlyPayment, schedule };
+  return {
+    retention,
+    totalInterest: interestCents / 100,
+    totalAmount: totalCents / 100,
+    monthlyPayment: Math.round(totalCents / termMonths) / 100,
+    schedule,
+  };
 }
 
 const config = {
@@ -172,7 +190,7 @@ function loan({ id, memberId, amount, rate, termMonths, startDate, paidInstallme
     transferFee: config.transferFee,
     totalInterest: calculation.totalInterest,
     totalAmount: calculation.totalAmount,
-    retentionAmount: Math.round(calculation.retention * 100) / 100,
+    retentionAmount: retentionPaid ? Math.round(calculation.retention * 100) / 100 : 0,
     retentionPaid,
     paidPrincipal: fullyPaid ? calculation.totalAmount : Math.round((calculation.totalAmount - remainingPrincipal) * 100) / 100,
     remainingPrincipal: fullyPaid ? 0 : Math.round(remainingPrincipal * 100) / 100,
@@ -221,7 +239,7 @@ const loans = [
     startDate: dateFromOffset(-1, 15),
     paidInstallments: 0,
     retentionPaid: false,
-    status: 'pending_retention',
+    status: 'active',
     notes: 'Pendiente del pago de retención.',
   }),
 ];
@@ -253,7 +271,7 @@ const transactions = [
       result.push(transaction('retention', item.retentionAmount, `Retención por suministros - ${item.memberName}`, item.startDate, item.id));
     }
     for (const entry of item.schedule.filter(entry => entry.status === 'paid')) {
-      result.push(transaction('loan_payment', item.monthlyPayment + item.transferFee, `Pago cuota ${entry.installmentNumber} - ${item.memberName}`, entry.paidDate, item.id));
+      result.push(transaction('loan_payment', entry.payment, `Pago cuota ${entry.installmentNumber} - ${item.memberName}`, entry.paidDate, item.id));
     }
     return result;
   }),

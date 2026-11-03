@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { getOpenLoans } from './loans';
 import type { ActivityLog, AppConfig, Contribution, Expense, Loan, Member, Refund, Transaction } from '../types';
 import type { AppState } from '../store/types';
 import type { Workspace } from './workspaces';
@@ -117,7 +118,7 @@ export function createReportWorkbook(state: AppState, availableCash: number) {
   const paid = state.contributions.filter((item) => item.status === 'paid' || item.status === 'late');
   const totalContributions = paid.reduce((sum, item) => sum + item.totalAmount, 0);
   const totalExpenses = state.expenses.reduce((sum, item) => sum + item.amount, 0);
-  const activeLoans = state.loans.filter((item) => item.status === 'active');
+  const activeLoans = getOpenLoans(state.loans);
   addSheet(workbook, 'Resumen', [
     { Indicador: 'Socios activos', Valor: state.members.filter((item) => item.status === 'active').length },
     { Indicador: 'Socios retirados', Valor: state.members.filter((item) => item.status === 'inactive').length },

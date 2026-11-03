@@ -1,7 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Loan, LoanFormData } from '../../types';
+import { Loan, LoanFormData, LoanPaymentData, Transaction } from '../../types';
 import { ActionHelpers } from '../types';
 import { calculateFrenchAmortization } from '../../hooks/useFinance';
+import { applySchedule, getLoanSchedule, isInstallmentPaid, loanHasPayments } from '../../lib/loans';
+import { formatCurrency } from '../../lib/formatters';
+
+const roundCents = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
 
 export function createLoanActions(
   helpers: ActionHelpers,
@@ -12,24 +16,27 @@ export function createLoanActions(
 ) {
   const { dispatch, getState, showToast, logActivity, addTransaction } = helpers;
 
-  const addLoan = (data: LoanFormData, options: { notify?: boolean } = {}): Loan => {
+  const money = (value: number) => formatCurrency(value, getState().config.currencyCode);
+
+  const findTransaction = (predicate: (transaction: Transaction) => boolean) =>
+    getState().transactions.find(predicate);
+
+  /** Construye los datos financieros del préstamo a partir del formulario. */
+  const buildLoanTerms = (data: LoanFormData) => {
     const state = getState();
     const member = state.members.find(m => m.id === data.memberId);
-
-    const retentionAmount = data.retentionAmount !== undefined
-      ? Number(data.retentionAmount.toFixed(2))
-      : Number((data.amount * state.config.retentionRate / 100).toFixed(2));
-
+    const transferFee = roundCents(data.transferFee ?? state.config.transferFee);
+    const chargeRetention = data.chargeRetention === true;
+    const retentionAmount = chargeRetention ? roundCents(data.amount * (Number(state.config.retentionRate) || 0) / 100) : 0;
     const amortization = calculateFrenchAmortization(
       data.amount,
       data.monthlyInterestRate,
       data.termMonths,
       data.startDate,
-      state.config.transferFee,
+      transferFee,
     );
 
-    const loan: Loan = {
-      id: uuidv4(),
+    return {
       memberId: data.memberId,
       memberName: member?.name || 'Desconocido',
       amount: data.amount,
@@ -39,31 +46,41 @@ export function createLoanActions(
       totalInterest: amortization.totalInterest,
       totalAmount: amortization.totalAmount,
       paidPrincipal: 0,
-      remainingPrincipal: amortization.monthlyPayment * data.termMonths,
+      remainingPrincipal: amortization.totalAmount,
       paidInstallments: 0,
       totalInstallments: data.termMonths,
       startDate: data.startDate,
       endDate: amortization.schedule[amortization.schedule.length - 1].dueDate,
-      status: data.retentionPaid ? 'active' : 'pending_retention',
+      status: 'active' as const,
       notes: data.notes,
-      createdAt: new Date().toISOString(),
-      transferFee: state.config.transferFee,
+      transferFee,
       retentionAmount,
-      retentionPaid: data.retentionPaid || false,
+      retentionPaid: chargeRetention,
+      lastPaymentPenalty: 0,
       schedule: amortization.schedule,
+    };
+  };
+
+  const addLoan = (data: LoanFormData, options: { notify?: boolean } = {}): Loan => {
+    const loan: Loan = {
+      id: uuidv4(),
+      createdAt: new Date().toISOString(),
+      ...buildLoanTerms(data),
     };
 
     dispatch({ type: 'ADD_LOAN', payload: loan });
 
-    if (data.retentionPaid) {
-      addTransaction('retention', Number(retentionAmount), `Retención (suministros) - ${member?.name}`);
+    addTransaction('loan_approval', -Number(loan.amount), `Desembolso de préstamo a ${loan.memberName}`, loan.id, loan.startDate);
+    if (loan.retentionPaid && loan.retentionAmount > 0) {
+      addTransaction('retention', loan.retentionAmount, `Retención (suministros) - ${loan.memberName}`, loan.id, loan.startDate);
     }
-    addTransaction('loan_approval', -Number(data.amount), `Desembolso de préstamo a ${member?.name}`, loan.id);
 
-    logActivity('loan_add', `Préstamo aprobado: ${member?.name} - ${state.config.currencySymbol}${data.amount}`, { loan }, loan.id);
-    if (options.notify !== false) showToast('success', 'Préstamo aprobado', data.retentionPaid
-      ? `Préstamo de ${state.config.currencySymbol}${data.amount} desembolsado. Retención cobrada: ${state.config.currencySymbol}${retentionAmount}`
-      : `Préstamo de ${state.config.currencySymbol}${data.amount} creado. Pendiente pago de retención: ${state.config.currencySymbol}${retentionAmount}`);
+    logActivity('loan_add', `Préstamo aprobado: ${loan.memberName} - ${money(loan.amount)}`, { loan }, loan.id);
+    if (options.notify !== false) {
+      showToast('success', 'Préstamo aprobado', loan.retentionPaid
+        ? `Préstamo de ${money(loan.amount)} desembolsado. Retención cobrada: ${money(loan.retentionAmount)}`
+        : `Préstamo de ${money(loan.amount)} desembolsado sin retención.`);
+    }
     return loan;
   };
 
@@ -80,25 +97,87 @@ export function createLoanActions(
 
   const getLoan = (id: string) => getState().loans.find(l => l.id === id);
 
+  /**
+   * Corrige los datos del préstamo. Sin pagos registrados se recalculan la
+   * tabla y los movimientos de caja (desembolso y retención); con pagos sólo
+   * se permiten cambiar las notas para no descuadrar cuotas ya cobradas.
+   */
+  const editLoan = (id: string, data: LoanFormData) => {
+    const state = getState();
+    const loan = state.loans.find(l => l.id === id);
+    if (!loan) return;
+
+    if (loanHasPayments(loan, state.transactions)) {
+      dispatch({ type: 'UPDATE_LOAN', payload: { ...loan, notes: data.notes } });
+      logActivity('loan_edit', `Notas de préstamo actualizadas: ${loan.memberName}`, { loanId: id, notes: data.notes }, id);
+      showToast('info', 'Préstamo actualizado', 'El préstamo tiene pagos registrados: sólo se actualizaron las notas.');
+      return;
+    }
+
+    const terms = buildLoanTerms(data);
+    const updated: Loan = { ...loan, ...terms, refinancedFromId: loan.refinancedFromId };
+
+    // Desembolso
+    const approval = findTransaction(t => t.type === 'loan_approval' && t.referenceId === id);
+    if (approval) {
+      dispatch({
+        type: 'UPDATE_TRANSACTION',
+        payload: { ...approval, amount: -Number(updated.amount), description: `Desembolso de préstamo a ${updated.memberName}`, date: updated.startDate },
+      });
+    } else {
+      addTransaction('loan_approval', -Number(updated.amount), `Desembolso de préstamo a ${updated.memberName}`, id, updated.startDate);
+    }
+
+    // Retención
+    const retention = findTransaction(t => t.type === 'retention' && t.referenceId === id);
+    const newRetention = updated.retentionPaid ? updated.retentionAmount : 0;
+    if (retention) {
+      if (newRetention > 0) {
+        dispatch({
+          type: 'UPDATE_TRANSACTION',
+          payload: { ...retention, amount: newRetention, description: `Retención (suministros) - ${updated.memberName}`, date: updated.startDate },
+        });
+      } else {
+        dispatch({ type: 'DELETE_TRANSACTION', payload: retention.id });
+      }
+    } else {
+      // Préstamos antiguos guardaban la retención sin referencia al préstamo
+      const previousRetention = loan.retentionPaid ? Number(loan.retentionAmount) || 0 : 0;
+      const difference = roundCents(newRetention - previousRetention);
+      if (difference !== 0) {
+        addTransaction('retention', difference, `Ajuste de retención (suministros) - ${updated.memberName}`, id);
+      }
+    }
+
+    dispatch({ type: 'UPDATE_LOAN', payload: updated });
+    logActivity('loan_edit', `Préstamo corregido: ${updated.memberName} - ${money(updated.amount)}`, { before: loan, after: updated }, id);
+    showToast('success', 'Préstamo actualizado', `Cuota mensual: ${money(updated.monthlyPayment)}. Total a cobrar: ${money(updated.totalAmount)}.`);
+  };
+
+  /** Elimina un préstamo sin pagos y revierte todos sus movimientos de caja. */
   const deleteLoan = (loanId: string) => {
     const state = getState();
     const loan = state.loans.find(l => l.id === loanId);
     if (!loan) return;
 
-    const disbursementTransaction = state.transactions.find(t => t.type === 'loan_approval' && t.referenceId === loanId);
-    if (disbursementTransaction) {
-      addTransaction('manual_adjustment', Number(loan.amount), `Anulación de préstamo - ${loan.memberName}`);
-    }
-    if (loan.retentionPaid) {
-      addTransaction('manual_adjustment', -Number(loan.retentionAmount), `Devolución de retención por anulación - ${loan.memberName}`);
+    if (loanHasPayments(loan, state.transactions)) {
+      showToast('error', 'No se puede eliminar', 'El préstamo tiene pagos registrados. Elimine primero los pagos.');
+      return;
     }
 
-    const updatedTransactions = state.transactions.filter(t => t.referenceId !== loanId);
-    dispatch({ type: 'SET_TRANSACTIONS', payload: updatedTransactions });
+    const linked = state.transactions.filter(t => t.referenceId === loanId);
+    linked.forEach(transaction => dispatch({ type: 'DELETE_TRANSACTION', payload: transaction.id }));
+
+    // Préstamos antiguos guardaban la retención sin referencia al préstamo
+    const hasLinkedRetention = linked.some(t => t.type === 'retention');
+    if (loan.retentionPaid && !hasLinkedRetention && loan.retentionAmount > 0) {
+      addTransaction('retention', -Number(loan.retentionAmount), `Devolución de retención por anulación - ${loan.memberName}`);
+    }
+
     dispatch({ type: 'DELETE_LOAN', payload: loanId });
 
-    logActivity('loan_delete', 'Préstamo eliminado', { loan }, loanId);
-    showToast('success', `Préstamo eliminado. Se han restaurado ${state.config.currencySymbol}${loan.amount} a la caja.`);
+    logActivity('loan_delete', `Préstamo eliminado: ${loan.memberName} - ${money(loan.amount)}`, { loan }, loanId);
+    showToast('success', 'Préstamo eliminado', `Se restauraron ${money(loan.amount)} a la caja.`);
   };
 
   const payRetention = (loanId: string) => {
@@ -106,145 +185,150 @@ export function createLoanActions(
     const loan = state.loans.find(l => l.id === loanId);
     if (!loan || loan.status !== 'pending_retention') return;
 
-    const member = state.members.find(m => m.id === loan.memberId);
-    const updatedLoan: Loan = { ...loan, status: 'active', retentionPaid: true };
+    const updatedLoan: Loan = { ...loan, status: loan.remainingPrincipal > 0.005 ? 'active' : 'paid', retentionPaid: true };
     dispatch({ type: 'UPDATE_LOAN', payload: updatedLoan });
 
-    addTransaction('retention', Number(loan.retentionAmount) || 0, `Retención (suministros) - ${member?.name}`);
-    logActivity('loan_retention_pay', `Retención pagada: ${member?.name} - ${state.config.currencySymbol}${loan.retentionAmount}`, { loan }, loanId);
-    showToast('success', 'Retención cobrada', `Se cobró ${state.config.currencySymbol}${loan.retentionAmount} por retención. Préstamo activado.`);
+    addTransaction('retention', Number(loan.retentionAmount) || 0, `Retención (suministros) - ${loan.memberName}`, loanId);
+    logActivity('loan_retention_pay', `Retención pagada: ${loan.memberName} - ${money(loan.retentionAmount)}`, { loan }, loanId);
+    showToast('success', 'Retención cobrada', `Se cobró ${money(loan.retentionAmount)} por retención.`);
   };
 
-  const payLoanInstallment = (loanId: string, installmentNumber: number) => {
-    const state = getState();
-    const loan = state.loans.find(l => l.id === loanId);
-    if (!loan || installmentNumber < 1 || installmentNumber > loan.totalInstallments) return;
+  /** Decide no cobrar la retención de un préstamo que la tenía pendiente. */
+  const waiveRetention = (loanId: string) => {
+    const loan = getState().loans.find(l => l.id === loanId);
+    if (!loan || loan.status !== 'pending_retention') return;
 
-    const updatedSchedule = loan.schedule.map(entry =>
-      entry.installmentNumber === installmentNumber ? { ...entry, status: 'paid' as const } : entry,
+    dispatch({
+      type: 'UPDATE_LOAN',
+      payload: { ...loan, status: loan.remainingPrincipal > 0.005 ? 'active' : 'paid', retentionAmount: 0, retentionPaid: false },
+    });
+    logActivity('loan_edit', `Retención no cobrada: ${loan.memberName}`, { loanId, retentionAmount: loan.retentionAmount }, loanId);
+    showToast('success', 'Retención omitida', 'El préstamo queda activo sin retención.');
+  };
+
+  const paymentDescription = (loan: Loan, installmentNumber: number, payment: number, penalty: number) =>
+    `Pago cuota ${installmentNumber}/${loan.totalInstallments} - ${loan.memberName} (Cuota: ${money(payment)}${penalty > 0 ? `, Multa: ${money(penalty)}` : ''})`;
+
+  /** Registra el pago de una cuota y su ingreso a caja. */
+  const payLoanInstallment = (loanId: string, installmentNumber: number, payment: LoanPaymentData) => {
+    const loan = getState().loans.find(l => l.id === loanId);
+    if (!loan) return;
+
+    const schedule = getLoanSchedule(loan);
+    const entry = schedule.find(e => e.installmentNumber === installmentNumber);
+    if (!entry || isInstallmentPaid(entry)) {
+      showToast('error', 'Cuota no disponible', 'La cuota seleccionada ya está pagada o no existe.');
+      return;
+    }
+
+    const penalty = roundCents(Math.max(0, payment.penaltyAmount ?? 0));
+    const transactionId = addTransaction(
+      'loan_payment',
+      roundCents(entry.payment + penalty),
+      paymentDescription(loan, installmentNumber, entry.payment, penalty),
+      loanId,
+      payment.paidDate,
     );
 
-    const newRemainingPrincipal = updatedSchedule.filter(e => e.status === 'pending').reduce((sum, e) => sum + e.payment, 0);
-    const newPaidPrincipal = loan.totalAmount - newRemainingPrincipal;
-    const newPaidInstallments = loan.paidInstallments + 1;
-    const isFullyPaid = newRemainingPrincipal <= 0.01;
-    const newStatus: Loan['status'] = isFullyPaid ? 'paid' : loan.status;
-
-    const updatedLoan: Loan = {
-      ...loan,
-      schedule: updatedSchedule,
-      paidInstallments: newPaidInstallments,
-      paidPrincipal: isFullyPaid ? loan.totalAmount : newPaidPrincipal,
-      remainingPrincipal: isFullyPaid ? 0 : newRemainingPrincipal,
-      status: newStatus,
-    };
-
+    const updatedSchedule = schedule.map(e => e.installmentNumber === installmentNumber
+      ? { ...e, status: 'paid' as const, paidDate: payment.paidDate, penaltyAmount: penalty, paymentTransactionId: transactionId }
+      : e);
+    const updatedLoan = applySchedule(loan, updatedSchedule);
     dispatch({ type: 'UPDATE_LOAN', payload: updatedLoan });
 
-    const member = state.members.find(m => m.id === loan.memberId);
-    const installmentAmount = Number(loan.monthlyPayment) || 0;
-    const transferFee = Number(state.config.transferFee) || 0;
-    const totalPayment = installmentAmount + transferFee;
-    addTransaction('loan_payment', Number(totalPayment), `Pago cuota ${installmentNumber} - ${member?.name} (Cuota: ${state.config.currencySymbol}${installmentAmount}, Transferencia: ${state.config.currencySymbol}${transferFee})`);
-    logActivity('loan_pay', `Cuota pagada: ${member?.name} - Cuota ${installmentNumber}/${loan.totalInstallments}`, { loanId, installmentNumber, amount: totalPayment }, loanId);
-
-    if (newStatus === 'paid') {
+    logActivity('loan_pay', `Cuota pagada: ${loan.memberName} - Cuota ${installmentNumber}/${loan.totalInstallments}`, { loanId, installmentNumber, amount: entry.payment, penalty }, loanId);
+    if (updatedLoan.status === 'paid') {
       showToast('success', 'Préstamo pagado', 'Todas las cuotas han sido canceladas.');
     } else {
-      showToast('success', 'Pago registrado', `Cuota ${installmentNumber} pagada.`);
+      showToast('success', 'Pago registrado', `Cuota ${installmentNumber} pagada. Saldo pendiente: ${money(updatedLoan.remainingPrincipal)}`);
     }
   };
 
-  const prepayLoan = (loanId: string, amount: number, includePenalty: boolean = false) => {
+  /** Busca el movimiento de caja de una cuota pagada (incluye préstamos antiguos). */
+  const findPaymentTransaction = (loan: Loan, transactionId?: string) => {
     const state = getState();
-    const loan = state.loans.find(l => l.id === loanId);
-    if (!loan || amount <= 0) return;
-
-    const today = new Date();
-    const dueDay = state.config.loanPaymentDueDay ?? 18;
-    const isLatePayment = today.getDate() >= dueDay;
-    const latePenalty = (isLatePayment && includePenalty) ? (state.config.penaltyAmount ?? 5) : 0;
-    const transferFee = state.config.transferFee;
-    const totalPayment = amount + transferFee + latePenalty;
-
-    const newRemaining = Math.round((loan.remainingPrincipal - amount) * 100) / 100;
-    const actualPaymentApplied = Math.min(amount, loan.remainingPrincipal);
-    const newPaidPrincipal = Math.round((loan.paidPrincipal + actualPaymentApplied) * 100) / 100;
-    const isFullyPaid = Math.abs(newRemaining) <= 0.01;
-    const finalRemaining = isFullyPaid ? 0 : Math.max(0, newRemaining);
-    const finalPaidPrincipal = isFullyPaid ? loan.amount : newPaidPrincipal;
-    const newStatus: Loan['status'] = isFullyPaid ? 'paid' : loan.status;
-
-    const estimatedInstallmentsPaid = Math.min(
-      Math.floor(actualPaymentApplied / loan.monthlyPayment) + loan.paidInstallments,
-      loan.totalInstallments,
-    );
-    const newPaidInstallments = isFullyPaid ? loan.totalInstallments : estimatedInstallmentsPaid;
-
-    const updatedLoan: Loan = {
-      ...loan,
-      remainingPrincipal: finalRemaining,
-      paidPrincipal: finalPaidPrincipal,
-      paidInstallments: newPaidInstallments,
-      status: newStatus,
-      lastPaymentPenalty: latePenalty,
-    };
-    dispatch({ type: 'UPDATE_LOAN', payload: updatedLoan });
-
-    const member = state.members.find(m => m.id === loan.memberId);
-    const penaltyDesc = latePenalty > 0 ? `, Multa tardía: ${state.config.currencySymbol}${latePenalty}` : '';
-    addTransaction('loan_payment', totalPayment, `Pago préstamo - ${member?.name} (Capital: ${state.config.currencySymbol}${actualPaymentApplied}, Transferencia: ${state.config.currencySymbol}${transferFee}${penaltyDesc})`, loanId);
-    logActivity('loan_pay', `Pago préstamo: ${member?.name} - Capital: ${state.config.currencySymbol}${actualPaymentApplied}${latePenalty > 0 ? ` + Multa: ${state.config.currencySymbol}${latePenalty}` : ''}`, { loanId, amount, latePenalty }, loanId);
-
-    if (isFullyPaid) {
-      showToast('success', 'Préstamo liquidado', 'El préstamo ha sido pagado completamente.');
-    } else if (latePenalty > 0) {
-      showToast('warning', 'Pago tardío registrado', `Se aplicó ${state.config.currencySymbol}${actualPaymentApplied} al capital + multa de ${state.config.currencySymbol}${latePenalty}. Saldo: ${state.config.currencySymbol}${finalRemaining}`);
-    } else {
-      showToast('success', 'Pago registrado', `Se aplicó ${state.config.currencySymbol}${actualPaymentApplied} al capital. Saldo pendiente: ${state.config.currencySymbol}${finalRemaining}`);
+    if (transactionId) {
+      return state.transactions.find(t => t.id === transactionId);
     }
+    const linkedIds = new Set(getLoanSchedule(loan).map(e => e.paymentTransactionId).filter(Boolean));
+    return state.transactions
+      .filter(t => t.type === 'loan_payment' && t.referenceId === loan.id && !linkedIds.has(t.id))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
   };
 
-  const deleteLoanPayment = (loanId: string) => {
-    const state = getState();
-    const loan = state.loans.find(l => l.id === loanId);
+  /** Corrige la fecha o la multa de una cuota pagada y su movimiento de caja. */
+  const updateLoanPayment = (loanId: string, installmentNumber: number, payment: LoanPaymentData) => {
+    const loan = getState().loans.find(l => l.id === loanId);
     if (!loan) return;
-    if (loan.paidInstallments <= 0) {
-      showToast('error', 'Sin pagos', 'Este préstamo no tiene pagos registrados para anular.');
+
+    const schedule = getLoanSchedule(loan);
+    const entry = schedule.find(e => e.installmentNumber === installmentNumber);
+    if (!entry || !isInstallmentPaid(entry)) return;
+
+    const penalty = roundCents(Math.max(0, payment.penaltyAmount ?? 0));
+    const transaction = entry.paymentTransactionId ? findPaymentTransaction(loan, entry.paymentTransactionId) : undefined;
+    let transactionId = entry.paymentTransactionId;
+
+    if (transaction) {
+      dispatch({
+        type: 'UPDATE_TRANSACTION',
+        payload: {
+          ...transaction,
+          amount: roundCents(entry.payment + penalty),
+          date: payment.paidDate,
+          description: paymentDescription(loan, installmentNumber, entry.payment, penalty),
+        },
+      });
+    } else {
+      // Pago antiguo sin movimiento enlazado: sólo se ajusta la diferencia de multa
+      const difference = roundCents(penalty - (entry.penaltyAmount ?? 0));
+      if (difference !== 0) {
+        transactionId = addTransaction('loan_payment', difference, `Ajuste de multa cuota ${installmentNumber} - ${loan.memberName}`, loanId, payment.paidDate);
+      }
+    }
+
+    const updatedSchedule = schedule.map(e => e.installmentNumber === installmentNumber
+      ? { ...e, paidDate: payment.paidDate, penaltyAmount: penalty, paymentTransactionId: transactionId }
+      : e);
+    dispatch({ type: 'UPDATE_LOAN', payload: applySchedule(loan, updatedSchedule) });
+
+    logActivity('loan_payment_edit', `Pago corregido: ${loan.memberName} - Cuota ${installmentNumber}/${loan.totalInstallments}`, { loanId, installmentNumber, before: entry, after: payment }, loanId);
+    showToast('success', 'Pago actualizado', `Cuota ${installmentNumber} corregida.`);
+  };
+
+  /** Elimina el pago de una cuota: vuelve a Pendiente y se retira de la caja. */
+  const deleteLoanPayment = (loanId: string, installmentNumber: number) => {
+    const loan = getState().loans.find(l => l.id === loanId);
+    if (!loan) return;
+
+    const schedule = getLoanSchedule(loan);
+    const entry = schedule.find(e => e.installmentNumber === installmentNumber);
+    if (!entry || !isInstallmentPaid(entry)) {
+      showToast('error', 'Sin pago', 'Esta cuota no tiene un pago registrado.');
       return;
     }
 
-    const loanPayments = state.transactions
-      .filter(t => t.type === 'loan_payment' && t.referenceId === loanId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    if (loanPayments.length === 0) {
-      showToast('error', 'Sin pagos', 'No se encontró una transacción de pago para anular.');
-      return;
+    const transaction = findPaymentTransaction(loan, entry.paymentTransactionId);
+    let removedAmount: number;
+    if (transaction) {
+      removedAmount = Number(transaction.amount) || 0;
+      dispatch({ type: 'DELETE_TRANSACTION', payload: transaction.id });
+    } else {
+      // Sin movimiento identificable: se registra la salida equivalente para cuadrar caja
+      removedAmount = roundCents(entry.payment + (entry.penaltyAmount ?? 0));
+      addTransaction('loan_payment', -removedAmount, `Anulación de pago cuota ${installmentNumber} - ${loan.memberName}`, loanId);
     }
 
-    const lastPayment = loanPayments[0];
-    const paymentAmount = Number(lastPayment.amount);
-
-    const newPaidInstallments = loan.paidInstallments - 1;
-    const newRemainingPrincipal = Math.round((loan.remainingPrincipal + loan.monthlyPayment) * 100) / 100;
-    const newStatus: Loan['status'] = loan.status === 'paid' ? 'active' : loan.status;
-
-    const updatedLoan: Loan = {
-      ...loan,
-      paidInstallments: newPaidInstallments,
-      remainingPrincipal: newRemainingPrincipal,
-      paidPrincipal: Math.max(0, loan.paidPrincipal - loan.monthlyPayment),
-      status: newStatus,
-      lastPaymentPenalty: 0,
-    };
+    const updatedSchedule = schedule.map(e => {
+      if (e.installmentNumber !== installmentNumber) return e;
+      const { paidDate: _paidDate, penaltyAmount: _penalty, paymentTransactionId: _transactionId, ...rest } = e;
+      return { ...rest, status: 'pending' as const };
+    });
+    const updatedLoan = applySchedule(loan, updatedSchedule);
     dispatch({ type: 'UPDATE_LOAN', payload: updatedLoan });
-    dispatch({ type: 'DELETE_TRANSACTION', payload: lastPayment.id });
 
-    const member = state.members.find(m => m.id === loan.memberId);
-    addTransaction('manual_adjustment', -paymentAmount, `Anulación de pago - ${member?.name} (Préstamo #${loanId.slice(0, 8)})`);
-    logActivity('loan_pay', `Pago anulado: ${member?.name} - ${state.config.currencySymbol}${paymentAmount}`, { loanId, paymentAmount }, loanId);
-    showToast('success', 'Pago anulado', `El último pago de ${state.config.currencySymbol}${paymentAmount.toFixed(2)} ha sido revertido. La cuota vuelve a estado Pendiente.`);
+    logActivity('loan_payment_delete', `Pago eliminado: ${loan.memberName} - Cuota ${installmentNumber}/${loan.totalInstallments} - ${money(removedAmount)}`, { loanId, installmentNumber, amount: removedAmount }, loanId);
+    showToast('success', 'Pago eliminado', `Se retiraron ${money(removedAmount)} de la caja. Saldo pendiente: ${money(updatedLoan.remainingPrincipal)}`);
   };
 
   const refinanceLoan = (loanId: string, newTermMonths: number): Loan => {
@@ -267,14 +351,15 @@ export function createLoanActions(
       notes: `Refinanciación del préstamo ${oldLoan.id}`,
     }, { notify: false });
 
-    updateLoan(newLoan.id, { refinancedFromId: loanId });
+    // getState() aún no incluye el préstamo recién creado: se actualiza directamente
+    dispatch({ type: 'UPDATE_LOAN', payload: { ...newLoan, refinancedFromId: loanId } });
     showToast('success', 'Préstamo refinanciado', `Nuevo préstamo creado con ${newTermMonths} cuotas.`);
     return newLoan;
   };
 
   return {
-    addLoan, updateLoan, getLoan, deleteLoan,
-    payRetention, payLoanInstallment, prepayLoan,
+    addLoan, updateLoan, editLoan, getLoan, deleteLoan,
+    payRetention, waiveRetention, payLoanInstallment, updateLoanPayment,
     deleteLoanPayment, refinanceLoan,
   };
 }

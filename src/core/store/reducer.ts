@@ -57,6 +57,8 @@ export function appReducer(state: AppState, action: Action): AppState {
       return { ...state, transactions: action.payload };
     case 'ADD_TRANSACTION':
       return { ...state, transactions: [...state.transactions, action.payload] };
+    case 'UPDATE_TRANSACTION':
+      return { ...state, transactions: state.transactions.map(t => t.id === action.payload.id ? action.payload : t) };
     case 'DELETE_TRANSACTION':
       return { ...state, transactions: state.transactions.filter(t => t.id !== action.payload) };
     case 'SET_REFUNDS':

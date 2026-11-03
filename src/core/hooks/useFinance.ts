@@ -23,85 +23,82 @@ interface LoanCalculationResult {
   schedule: AmortizationEntry[];
 }
 
+const toCents = (value: number) => Math.round((Number(value) || 0) * 100);
+const fromCents = (cents: number) => cents / 100;
+
 /**
- * Calcula la tabla de amortización simple para un préstamo
- * Lógica: Suma directa de capital + retención (1%) + interés total + transferencia, dividido en cuotas iguales redondeadas hacia arriba
+ * Reparte un total (en centavos) en `parts` filas de forma uniforme usando
+ * redondeo acumulado: la suma de las filas es exactamente el total y ninguna
+ * fila queda negativa.
+ */
+function splitEvenly(totalCents: number, parts: number): number[] {
+  const rows: number[] = [];
+  let previous = 0;
+  for (let index = 1; index <= parts; index++) {
+    const cumulative = Math.round((totalCents * index) / parts);
+    rows.push(cumulative - previous);
+    previous = cumulative;
+  }
+  return rows;
+}
+
+/**
+ * Calcula la tabla de pagos de un préstamo.
+ *
+ * - Capital: el monto prestado se reparte en partes iguales entre las cuotas
+ *   y la columna suma exactamente el monto.
+ * - Interés: tasa mensual sobre el capital prestado por cada mes del plazo,
+ *   repartido en partes iguales.
+ * - Transferencia: `transferFee` es el costo TOTAL de la transferencia del
+ *   préstamo y se fracciona entre las cuotas (no se cobra en cada pago).
+ * - La retención por suministros es opcional y no forma parte del total.
+ *
+ * Ejemplo: $100 a 3 meses al 1% con transferencia de $0,41 → total $103,41 y
+ * cuota mensual de $34,47.
  */
 export function calculateFrenchAmortization(
   amount: number,
   monthlyInterestRate: number,  // Tasa mensual en porcentaje (1% = 1)
   termMonths: number,
   startDate: string,
-  transferFee: number = 0.41    // Cargo fijo por transferencia
+  transferFee: number = 0.41    // Costo total de transferencia del préstamo
 ): LoanCalculationResult {
-  // Retención: 1% del capital
-  const retention = amount * 0.01;
-  
-  // Monto base con retención
-  const baseWithRetention = amount + retention;
-  
-  // Interés total: 1% mensual sobre el capital por número de meses
-  const totalInterest = (amount * (monthlyInterestRate / 100)) * termMonths;
-  
-  // Total antes de transferencia
-  const totalBeforeTransfer = baseWithRetention + totalInterest;
-  
-  // Total final incluyendo transferencia (nota: el monto usado para calcular la cuota
-  // sólo incluye un cargo de transferencia, ya que la tasa se cobra por cada pago
-  // separado). Esto preserva la forma en que se muestra la cuota mensual en la UI.
-  const totalAmount = totalBeforeTransfer + transferFee;
-  
-  // Cuota mensual: dividir total entre meses y redondear hacia arriba al centavo
-  const rawMonthlyPayment = totalAmount / termMonths;
-  const monthlyPayment = Math.ceil(rawMonthlyPayment * 100) / 100;
-  
-  // Generar tabla de amortización con cuotas iguales
+  const months = Math.max(1, Math.floor(termMonths) || 1);
+  const principalCents = toCents(amount);
+  const interestCents = Math.round(principalCents * (Number(monthlyInterestRate) || 0) / 100 * months);
+  const transferCents = Math.max(0, toCents(transferFee));
+  const totalCents = principalCents + interestCents + transferCents;
+
+  const principalRows = splitEvenly(principalCents, months);
+  const interestRows = splitEvenly(interestCents, months);
+  const transferRows = splitEvenly(transferCents, months);
+
   const schedule: AmortizationEntry[] = [];
-  let remainingBalance = amount; // Solo el capital restante
   const startDateObj = parseISO(startDate);
-  const monthlyRate = monthlyInterestRate / 100;
-  
-  for (let installment = 1; installment <= termMonths; installment++) {
-    // Interés sobre el saldo pendiente real
-    const interestPayment = Math.round(remainingBalance * monthlyRate * 100) / 100;
-    
-    // Transferencia: 0.41 en cada fila
-    const transferFeeForThis = transferFee;
-    
-    // Principal: cuota menos interés (transferencia no afecta el cálculo del principal)
-    const principalPayment = Math.round((monthlyPayment - interestPayment) * 100) / 100;
-    
-    // Actualizar balance
-    remainingBalance = Math.round((remainingBalance - principalPayment) * 100) / 100;
-    
-    // Para la última cuota, asegurar que llegue exactamente a 0
-    if (installment === termMonths) {
-      remainingBalance = 0;
-    }
-    
-    // Fecha de vencimiento: primera cuota 30 días después del inicio
-    const dueDate = addMonths(startDateObj, installment);
-    
+  let remainingCents = totalCents;
+
+  for (let index = 0; index < months; index++) {
+    const paymentCents = principalRows[index] + interestRows[index] + transferRows[index];
+    remainingCents -= paymentCents;
+
     schedule.push({
-      installmentNumber: installment,
-      dueDate: format(dueDate, 'yyyy-MM-dd'),
-      principal: principalPayment,
-      interest: interestPayment,
-      transferFee: transferFeeForThis,
-      payment: monthlyPayment,
-      balance: Math.max(0, remainingBalance),
+      installmentNumber: index + 1,
+      dueDate: format(addMonths(startDateObj, index + 1), 'yyyy-MM-dd'),
+      principal: fromCents(principalRows[index]),
+      interest: fromCents(interestRows[index]),
+      transferFee: fromCents(transferRows[index]),
+      payment: fromCents(paymentCents),
+      // Saldo pendiente total (capital + interés + transferencia) tras esta cuota
+      balance: fromCents(Math.max(0, remainingCents)),
       status: 'pending',
     });
   }
-  
-  // `totalTransferFees` ahora refleja la suma de todos los cargos de transferencia
-  // (tasa por cuota multiplicada por el número de cuotas), lo que facilita mostrar
-  // el costo acumulado en formularios y reportes.
+
   return {
-    monthlyPayment: monthlyPayment,
-    totalInterest: Math.round(totalInterest * 100) / 100,
-    totalTransferFees: transferFee * termMonths,
-    totalAmount: Math.round(totalAmount * 100) / 100,
+    monthlyPayment: fromCents(Math.round(totalCents / months)),
+    totalInterest: fromCents(interestCents),
+    totalTransferFees: fromCents(transferCents),
+    totalAmount: fromCents(totalCents),
     schedule,
   };
 }

@@ -96,13 +96,13 @@ export interface Loan {
   monthlyInterestRate: number;     // Tasa mensual %
   termMonths: number;              // Plazo en meses
   monthlyPayment: number;          // Cuota fija (Sistema Francés)
-  transferFee: number;             // Cargo por transferencia por cuota
+  transferFee: number;             // Costo total de transferencia, fraccionado entre las cuotas
   totalInterest: number;           // Interés total del préstamo
   totalAmount: number;             // Capital + Intereses + Transferencias
-  retentionAmount: number;         // 1% de retención por suministros
+  retentionAmount: number;         // Retención por suministros (0 si no se cobra)
   retentionPaid: boolean;          // Si ya se cobró la retención
-  paidPrincipal: number;           // Capital pagado hasta ahora
-  remainingPrincipal: number;      // Capital pendiente
+  paidPrincipal: number;           // Total cobrado hasta ahora (capital + interés + transferencia)
+  remainingPrincipal: number;      // Saldo pendiente total por cobrar
   paidInstallments: number;        // Cuotas pagadas
   totalInstallments: number;       // Total de cuotas
   startDate: string;
@@ -122,8 +122,13 @@ export interface LoanFormData {
   termMonths: number;
   startDate: string;
   notes?: string;
-  retentionAmount?: number; // Monto de retención opcional
-  retentionPaid?: boolean; // Si la retención fue pagada al aprobar
+  transferFee?: number;      // Costo total de transferencia (por defecto config.transferFee)
+  chargeRetention?: boolean; // Cobrar retención por suministros al aprobar (por defecto no)
+}
+
+export interface LoanPaymentData {
+  paidDate: string;
+  penaltyAmount?: number;
 }
 
 // ==================== AMORTIZACIÓN ====================
@@ -138,6 +143,7 @@ export interface AmortizationEntry {
   status: 'pending' | 'paid' | 'late' | 'penalty' | 'partial';
   paidDate?: string;
   penaltyAmount?: number;
+  paymentTransactionId?: string;   // Transacción de caja que registró el pago
 }
 
 export interface AmortizationSchedule {
@@ -197,7 +203,7 @@ export interface Transaction {
 export type ActivityType =
   | 'member_add' | 'member_edit' | 'member_delete' | 'member_inactive'
   | 'contribution_add' | 'contribution_pay' | 'contribution_edit' | 'contribution_delete'
-  | 'loan_add' | 'loan_pay' | 'loan_retention_pay' | 'loan_refinance' | 'loan_cancel' | 'loan_delete'
+  | 'loan_add' | 'loan_edit' | 'loan_pay' | 'loan_payment_edit' | 'loan_payment_delete' | 'loan_retention_pay' | 'loan_refinance' | 'loan_cancel' | 'loan_delete'
   | 'expense_add' | 'expense_delete'
   | 'refund_add' | 'refund_edit' | 'refund_delete'
   | 'config_update' | 'cashbox_adjust' | 'annual_closing'

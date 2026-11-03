@@ -9,12 +9,14 @@ import { DatePicker } from "@/shared/ui/date-picker";
 import { StatCard } from '@/shared/components/StatCard';
 import { MemberAvatar } from '@/shared/components/MemberAvatar';
 import { TableActionButton } from '@/shared/components/TableActionButton';
+import { RowActionsMenu } from '@/shared/components/RowActionsMenu';
 import { formatCurrency, formatDate, formatPercentage } from '@/core/lib/formatters';
-import { Loan, LoanFormData, Member } from '@/core/types';
+import { getLoanSchedule, getOpenLoans, getOutstandingBalance, isInstallmentPaid, isLoanOpen, loanHasPayments } from '@/core/lib/loans';
+import { AmortizationEntry, Loan, LoanFormData, Member } from '@/core/types';
 import { calculateFrenchAmortization } from '@/core/hooks/useFinance';
 import {
   Plus, CreditCard, DollarSign, Calendar as CalendarIcon,
-  RefreshCw, Eye, TrendingUp, Calculator, ArrowLeft, Trash2, AlertTriangle, MessageSquare, Undo2
+  RefreshCw, TrendingUp, Calculator, ArrowLeft, Trash2, AlertTriangle, MessageSquare, Pencil, Ban
 } from 'lucide-react';
 import { RefinanceModal } from './components/RefinanceModal';
 
@@ -26,9 +28,32 @@ interface MemberLoanSummary {
   totalLoans: number;
   activeLoans: number;
   pendingRetentionLoans: number;
+  retentionChargedLoans: number;
   paidLoans: number;
   totalLoaned: number;
   totalDebt: number;
+}
+
+interface PaymentTarget {
+  installmentNumber: number;
+  mode: 'create' | 'edit';
+}
+
+const todayISO = () => new Date().toISOString().split('T')[0];
+
+const loanStatusStyles: Record<Loan['status'], { label: string; className: string }> = {
+  pending_retention: { label: "Retención pendiente", className: "bg-warning/10 text-warning" },
+  active: { label: "Activo", className: "bg-primary/10 text-primary" },
+  paid: { label: "Pagado", className: "bg-success/10 text-success" },
+  refinanced: { label: "Refinanciado", className: "bg-secondary/10 text-secondary" },
+  defaulted: { label: "En mora", className: "bg-destructive/10 text-destructive" },
+  cancelled: { label: "Cancelado", className: "bg-muted text-muted-foreground" },
+};
+
+function getRetentionBadge(loan: Loan) {
+  if (loan.status === 'pending_retention') return { label: "Pendiente", className: "bg-warning/10 text-warning" };
+  if (loan.retentionPaid && loan.retentionAmount > 0) return { label: "Cobrada", className: "bg-success/10 text-success" };
+  return { label: "No cobrada", className: "bg-muted text-muted-foreground" };
 }
 
 export function Loans() {
@@ -38,11 +63,14 @@ export function Loans() {
     config,
     transactions,
     addLoan,
+    editLoan,
     payRetention,
-    prepayLoan,
+    waiveRetention,
+    payLoanInstallment,
+    updateLoanPayment,
+    deleteLoanPayment,
     refinanceLoan,
     deleteLoan,
-    deleteLoanPayment,
     showToast,
   } = useApp();
 
@@ -54,58 +82,45 @@ export function Loans() {
 
   // Modal states
   const [showForm, setShowForm] = useState(false);
+  const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
   const [showRefinance, setShowRefinance] = useState(false);
-  const [showPayment, setShowPayment] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [appliedLatePaymentPenalty, setAppliedLatePaymentPenalty] = useState(false);
+
+  // Payment modal states
+  const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
+  const [paymentDate, setPaymentDate] = useState(todayISO());
+  const [applyPenalty, setApplyPenalty] = useState(false);
 
   // Delete modal states
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [loanToDelete, setLoanToDelete] = useState<Loan | null>(null);
+  const [paymentToDelete, setPaymentToDelete] = useState<number | null>(null);
 
-  // Annul payment modal states
-  const [isAnnulModalOpen, setIsAnnulModalOpen] = useState(false);
-  const [loanToAnnul, setLoanToAnnul] = useState<Loan | null>(null);
-
-  const [formData, setFormData] = useState<LoanFormData>({
-    memberId: '',
+  const createEmptyForm = (memberId = ''): LoanFormData => ({
+    memberId,
     amount: 0,
     monthlyInterestRate: config.monthlyInterestRate,
     termMonths: 12,
-    startDate: new Date().toISOString().split('T')[0],
+    startDate: todayISO(),
     notes: '',
-    retentionPaid: false,
+    transferFee: config.transferFee,
+    chargeRetention: false,
   });
 
-  const [simulatedLoan, setSimulatedLoan] = useState<ReturnType<typeof calculateFrenchAmortization> | null>(null);
+  const [formData, setFormData] = useState<LoanFormData>(() => createEmptyForm());
 
-  // Prefill payment with the smaller of cuota mensual or saldo pendiente
-  // Also initialize late payment penalty based on current date
-  React.useEffect(() => {
-    if (selectedLoan && showPayment) {
-      const suggested = Math.min(selectedLoan.remainingPrincipal, selectedLoan.monthlyPayment);
-      setPaymentAmount(suggested.toFixed(2));
-      
-      const today = new Date();
-      const currentDay = today.getDate();
-      const dueDay = config.loanPaymentDueDay ?? 18;
-      setAppliedLatePaymentPenalty(currentDay >= dueDay);
-    }
-  }, [selectedLoan, showPayment, config.loanPaymentDueDay]);
+  const formTransferFee = formData.transferFee ?? config.transferFee;
+  const formRetentionAmount = formData.amount * (Number(config.retentionRate) || 0) / 100;
 
   // Simular préstamo
-  React.useEffect(() => {
-    if (formData.amount > 0 && formData.termMonths > 0) {
-      const result = calculateFrenchAmortization(
-        formData.amount,
-        formData.monthlyInterestRate,
-        formData.termMonths,
-        formData.startDate,
-        config.transferFee
-      );
-      setSimulatedLoan(result);
-    }
-  }, [formData.amount, formData.monthlyInterestRate, formData.termMonths, formData.startDate, config.transferFee]);
+  const simulatedLoan = useMemo(() => {
+    if (!(formData.amount > 0 && formData.termMonths > 0)) return null;
+    return calculateFrenchAmortization(
+      formData.amount,
+      formData.monthlyInterestRate,
+      formData.termMonths,
+      formData.startDate,
+      formTransferFee,
+    );
+  }, [formData.amount, formData.monthlyInterestRate, formData.termMonths, formData.startDate, formTransferFee]);
 
   // Resumen de préstamos por socio para la vista principal
   const memberLoanSummaries = useMemo<MemberLoanSummary[]>(() => {
@@ -113,20 +128,19 @@ export function Loans() {
       .filter((member) => member.status === "active")
       .map((member) => {
         const memberLoans = loans.filter((loan) => loan.memberId === member.id);
-        const activeLoans = memberLoans.filter((loan) => loan.status === "active");
-        const pendingRetentionLoans = memberLoans.filter((loan) => loan.status === "pending_retention");
-        const paidLoans = memberLoans.filter((loan) => loan.status === "paid");
-
         if (memberLoans.length === 0) return null;
+
+        const openLoans = memberLoans.filter(isLoanOpen);
 
         return {
           member,
           totalLoans: memberLoans.length,
-          activeLoans: activeLoans.length,
-          pendingRetentionLoans: pendingRetentionLoans.length,
-          paidLoans: paidLoans.length,
+          activeLoans: openLoans.length,
+          pendingRetentionLoans: memberLoans.filter((loan) => loan.status === "pending_retention").length,
+          retentionChargedLoans: memberLoans.filter((loan) => loan.retentionPaid && loan.retentionAmount > 0).length,
+          paidLoans: memberLoans.filter((loan) => loan.status === "paid").length,
           totalLoaned: memberLoans.reduce((sum, loan) => sum + loan.amount, 0),
-          totalDebt: activeLoans.reduce((sum, loan) => sum + loan.remainingPrincipal, 0),
+          totalDebt: getOutstandingBalance(memberLoans),
         };
       })
       .filter((summary): summary is MemberLoanSummary => summary !== null);
@@ -136,7 +150,7 @@ export function Loans() {
     { value: "all", label: "Todos", count: memberLoanSummaries.length },
     { value: "active", label: "Con préstamos activos", count: memberLoanSummaries.filter((summary) => summary.activeLoans > 0).length },
     { value: "pending_retention", label: "Retención pendiente", count: memberLoanSummaries.filter((summary) => summary.pendingRetentionLoans > 0).length },
-    { value: "paid", label: "Préstamos pagados", count: memberLoanSummaries.filter((summary) => summary.totalLoans > 0 && summary.activeLoans === 0 && summary.pendingRetentionLoans === 0 && summary.paidLoans > 0).length },
+    { value: "paid", label: "Préstamos pagados", count: memberLoanSummaries.filter((summary) => summary.activeLoans === 0 && summary.paidLoans > 0).length },
   ], [memberLoanSummaries]);
 
   const filteredMemberLoanSummaries = useMemo(() => {
@@ -147,7 +161,7 @@ export function Loans() {
       const matchesFilter = loanFilter === "all"
         || (loanFilter === "active" && summary.activeLoans > 0)
         || (loanFilter === "pending_retention" && summary.pendingRetentionLoans > 0)
-        || (loanFilter === "paid" && summary.activeLoans === 0 && summary.pendingRetentionLoans === 0 && summary.paidLoans > 0);
+        || (loanFilter === "paid" && summary.activeLoans === 0 && summary.paidLoans > 0);
 
       return matchesSearch && matchesFilter;
     });
@@ -162,34 +176,39 @@ export function Loans() {
   }, [loans, selectedMember]);
 
   // Clasificar préstamos
-  const activeLoans = useMemo(() =>
-    memberLoans.filter(loan => loan.remainingPrincipal > 0.01), [memberLoans]
-  );
-  const paidLoans = useMemo(() =>
-    memberLoans.filter(loan => loan.remainingPrincipal <= 0.01), [memberLoans]
-  );
+  const activeLoans = useMemo(() => memberLoans.filter(isLoanOpen), [memberLoans]);
+  const closedLoans = useMemo(() => memberLoans.filter(loan => !isLoanOpen(loan)), [memberLoans]);
 
-  // Actualizar selectedLoan cuando cambie el array de loans
+  // Mantener sincronizado el préstamo seleccionado con el store
   React.useEffect(() => {
     if (selectedLoan) {
       const updatedLoan = loans.find(l => l.id === selectedLoan.id);
       if (updatedLoan) {
         setSelectedLoan(updatedLoan);
+      } else {
+        setSelectedLoan(null);
+        setViewMode(selectedMember ? 'member-loans' : 'members');
       }
     }
   }, [loans]);
 
-  // Tabla de amortización
-  const amortizationSchedule = useMemo(() => {
-    if (!selectedLoan) return null;
-    return calculateFrenchAmortization(
-      selectedLoan.amount,
-      selectedLoan.monthlyInterestRate,
-      selectedLoan.termMonths,
-      selectedLoan.startDate,
-      selectedLoan.transferFee || config.transferFee
-    );
-  }, [selectedLoan]);
+  // Tabla de pagos guardada del préstamo (con el estado de cada cuota)
+  const loanSchedule = useMemo(() => (selectedLoan ? getLoanSchedule(selectedLoan) : []), [selectedLoan]);
+  const nextPendingInstallment = loanSchedule.find(entry => !isInstallmentPaid(entry));
+  const scheduleTotals = useMemo(() => loanSchedule.reduce(
+    (totals, entry) => ({
+      principal: totals.principal + entry.principal,
+      interest: totals.interest + entry.interest,
+      transferFee: totals.transferFee + (entry.transferFee || 0),
+      payment: totals.payment + entry.payment,
+    }),
+    { principal: 0, interest: 0, transferFee: 0, payment: 0 },
+  ), [loanSchedule]);
+
+  const paymentEntry: AmortizationEntry | undefined = paymentTarget
+    ? loanSchedule.find(entry => entry.installmentNumber === paymentTarget.installmentNumber)
+    : undefined;
+  const penaltyValue = Number(config.penaltyAmount ?? 5) || 0;
 
   // Handlers
   const handleSelectMember = (member: Member) => {
@@ -213,61 +232,93 @@ export function Loans() {
   };
 
   const handleOpenForm = (member?: Member) => {
+    setEditingLoan(null);
+    setFormData(createEmptyForm(member?.id));
+    setShowForm(true);
+  };
+
+  const handleOpenEdit = (loan: Loan) => {
+    setEditingLoan(loan);
     setFormData({
-      memberId: member?.id || '',
-      amount: 0,
-      monthlyInterestRate: config.monthlyInterestRate,
-      termMonths: 12,
-      startDate: new Date().toISOString().split('T')[0],
-      notes: '',
-      retentionPaid: false,
+      memberId: loan.memberId,
+      amount: loan.amount,
+      monthlyInterestRate: loan.monthlyInterestRate,
+      termMonths: loan.termMonths,
+      startDate: loan.startDate,
+      notes: loan.notes || '',
+      transferFee: loan.transferFee,
+      chargeRetention: loan.retentionPaid && loan.retentionAmount > 0,
     });
     setShowForm(true);
   };
 
-  const handleSubmit = () => {
-    if (!formData.memberId || formData.amount <= 0) {
-      showToast('error', 'Error de validación', 'Complete todos los campos.');
-      return;
-    }
-
-    // Calcular el monto de retención usando la tasa de interés mensual
-    const retentionToPass = formData.amount * formData.monthlyInterestRate / 100;
-
-    addLoan({
-      ...formData,
-      retentionAmount: retentionToPass,
-    });
+  const handleCloseForm = () => {
     setShowForm(false);
+    setEditingLoan(null);
   };
 
-  const handlePayment = () => {
-    if (!selectedLoan) return;
-    const amount = parseFloat(paymentAmount);
+  const editingLocked = editingLoan ? loanHasPayments(editingLoan, transactions) : false;
 
-    // Permitir pagos de $0.00 solo si el saldo pendiente es $0.00
-    const isZeroPaymentAllowed = Math.abs(selectedLoan.remainingPrincipal) <= 0.01 && amount === 0;
-
-    if (isNaN(amount) || (amount <= 0 && !isZeroPaymentAllowed)) {
-      showToast('error', 'Error', 'Ingrese un monto válido');
+  const handleSubmit = () => {
+    if (editingLoan && editingLocked) {
+      editLoan(editingLoan.id, formData);
+      handleCloseForm();
       return;
     }
-    if (amount > selectedLoan.remainingPrincipal && Math.abs(selectedLoan.remainingPrincipal) > 0.01) {
-      showToast('error', 'Monto excesivo', `El pago no puede exceder el saldo pendiente de ${formatCurrency(selectedLoan.remainingPrincipal, config.currencyCode)}`);
+    if (!formData.memberId || !(formData.amount > 0) || !(formData.termMonths >= 1)) {
+      showToast('error', 'Error de validación', 'Complete socio, monto y plazo.');
       return;
     }
-    prepayLoan(selectedLoan.id, amount, appliedLatePaymentPenalty);
-    setShowPayment(false);
-    setPaymentAmount('');
-    setAppliedLatePaymentPenalty(false);
+    if (!(formTransferFee >= 0)) {
+      showToast('error', 'Error de validación', 'El costo de transferencia no puede ser negativo.');
+      return;
+    }
+
+    if (editingLoan) {
+      editLoan(editingLoan.id, formData);
+    } else {
+      addLoan(formData);
+    }
+    handleCloseForm();
   };
 
-  const handleFinalizeLoan = () => {
-    if (!selectedLoan) return;
-    // Pago de $0.00 para forzar el cierre cuando el saldo ya es cero
-    prepayLoan(selectedLoan.id, 0);
-    setShowPayment(false);
-    setPaymentAmount('');
+  const isLatePaymentDay = () => new Date().getDate() >= (config.loanPaymentDueDay ?? 18);
+
+  const handleOpenPayment = (installmentNumber: number) => {
+    setPaymentTarget({ installmentNumber, mode: 'create' });
+    setPaymentDate(todayISO());
+    setApplyPenalty(isLatePaymentDay());
+  };
+
+  const handleOpenEditPayment = (entry: AmortizationEntry) => {
+    setPaymentTarget({ installmentNumber: entry.installmentNumber, mode: 'edit' });
+    setPaymentDate(entry.paidDate || todayISO());
+    setApplyPenalty((entry.penaltyAmount ?? 0) > 0);
+  };
+
+  const handleClosePayment = () => setPaymentTarget(null);
+
+  const handlePaymentSubmit = () => {
+    if (!selectedLoan || !paymentTarget) return;
+    if (!paymentDate) {
+      showToast('error', 'Fecha requerida', 'Seleccione la fecha del pago.');
+      return;
+    }
+    const penaltyAmount = applyPenalty ? (paymentTarget.mode === 'edit' && paymentEntry?.penaltyAmount ? paymentEntry.penaltyAmount : penaltyValue) : 0;
+    const payment = { paidDate: paymentDate, penaltyAmount };
+    if (paymentTarget.mode === 'edit') {
+      updateLoanPayment(selectedLoan.id, paymentTarget.installmentNumber, payment);
+    } else {
+      payLoanInstallment(selectedLoan.id, paymentTarget.installmentNumber, payment);
+    }
+    setPaymentTarget(null);
+  };
+
+  const handleConfirmDeletePayment = () => {
+    if (selectedLoan && paymentToDelete !== null) {
+      deleteLoanPayment(selectedLoan.id, paymentToDelete);
+    }
+    setPaymentToDelete(null);
   };
 
   const handleRefinanceSubmit = (newTermMonths: number) => {
@@ -278,42 +329,25 @@ export function Loans() {
     }
   };
 
-  const handleDeleteLoan = (loan: Loan) => {
-    setLoanToDelete(loan);
-    setIsDeleteModalOpen(true);
-  };
-
   const handleConfirmDelete = () => {
     if (loanToDelete) {
       deleteLoan(loanToDelete.id);
-      setIsDeleteModalOpen(false);
       setLoanToDelete(null);
     }
   };
 
-  const handleAnnulPayment = (loan: Loan) => {
-    setLoanToAnnul(loan);
-    setIsAnnulModalOpen(true);
-  };
-
-  const handleConfirmAnnul = () => {
-    if (loanToAnnul) {
-      deleteLoanPayment(loanToAnnul.id);
-      setIsAnnulModalOpen(false);
-      setLoanToAnnul(null);
-    }
-  };
-
   const memberOptions = members
-    .filter(m => m.status === 'active')
+    .filter(m => m.status === 'active' || m.id === formData.memberId)
     .map(m => ({ value: m.id, label: m.name }));
+
+  const interestRateOptions = Array.from(new Set([1, 2, formData.monthlyInterestRate].filter((rate) => rate > 0))).sort((a, b) => a - b);
 
   // Stats
   const stats = useMemo(() => ({
-    totalActive: loans.filter(l => l.status === 'active').length,
+    totalActive: getOpenLoans(loans).length,
     totalLoaned: loans.reduce((sum, l) => sum + l.amount, 0),
     totalInterest: loans.reduce((sum, l) => sum + l.totalInterest, 0),
-    totalPending: loans.filter(l => l.status === 'active').reduce((sum, l) => sum + l.remainingPrincipal, 0),
+    totalPending: getOutstandingBalance(loans),
   }), [loans]);
 
   const loanColumns: Column<Loan>[] = [
@@ -321,16 +355,28 @@ export function Loans() {
       key: "status",
       header: "Estado",
       render: (loan) => {
-        const status = {
-          pending_retention: { label: "Retención pendiente", className: "bg-warning/10 text-warning" },
-          active: { label: "Activo", className: "bg-primary/10 text-primary" },
-          paid: { label: "Pagado", className: "bg-success/10 text-success" },
-          refinanced: { label: "Refinanciado", className: "bg-secondary/10 text-secondary" },
-          defaulted: { label: "En mora", className: "bg-destructive/10 text-destructive" },
-          cancelled: { label: "Cancelado", className: "bg-muted text-muted-foreground" },
-        }[loan.status];
+        const status = loanStatusStyles[loan.status];
+        const hasPayments = loanHasPayments(loan, transactions);
 
-        return <Chip size="sm" variant="soft" className={status.className}>{status.label}</Chip>;
+        return (
+          <div className="flex items-center gap-2">
+            <Chip size="sm" variant="soft" className={status.className}>{status.label}</Chip>
+            <RowActionsMenu
+              label={`Acciones del préstamo de ${loan.memberName}`}
+              actions={[
+                { id: "edit", label: "Editar", icon: Pencil, onAction: () => handleOpenEdit(loan) },
+                {
+                  id: "delete",
+                  label: hasPayments ? "Eliminar (tiene pagos)" : "Eliminar",
+                  icon: Trash2,
+                  tone: "danger",
+                  isDisabled: hasPayments,
+                  onAction: () => setLoanToDelete(loan),
+                },
+              ]}
+            />
+          </div>
+        );
       },
     },
     {
@@ -350,43 +396,30 @@ export function Loans() {
       header: "Saldo pendiente",
       align: "right",
       render: (loan) => (
-        <span className={loan.remainingPrincipal > 0.01 ? "font-medium text-destructive" : "font-medium text-success"}>
+        <span className={loan.remainingPrincipal > 0.005 ? "font-medium text-destructive" : "font-medium text-success"}>
           {formatCurrency(loan.remainingPrincipal, config.currencyCode)}
         </span>
       ),
     },
     {
+      key: "retention",
+      header: "Retención",
+      align: "center",
+      render: (loan) => {
+        const badge = getRetentionBadge(loan);
+        return <Chip size="sm" variant="soft" className={badge.className}>{badge.label}</Chip>;
+      },
+    },
+    {
       key: "termMonths",
       header: "Plazo",
       align: "center",
-      render: (loan) => loan.termMonths + " meses",
+      render: (loan) => `${loan.paidInstallments}/${loan.termMonths} cuotas`,
     },
     {
       key: "startDate",
       header: "Inicio",
       render: (loan) => formatDate(loan.startDate),
-    },
-    {
-      key: "actions",
-      header: "Acciones",
-      align: "center",
-      width: "88px",
-      render: (loan) => {
-        const hasPayments = transactions.some(
-          (transaction) => transaction.referenceId === loan.id && transaction.type === "loan_payment",
-        );
-
-        return hasPayments ? (
-          <span className="text-muted-foreground">—</span>
-        ) : (
-          <TableActionButton
-            label="Eliminar préstamo"
-            icon={Trash2}
-            tone="danger"
-            onPress={() => handleDeleteLoan(loan)}
-          />
-        );
-      },
     },
   ];
 
@@ -417,11 +450,15 @@ export function Loans() {
       },
     },
     {
-      key: "pendingRetentionLoans",
+      key: "retention",
       header: "Retención",
       width: "14%",
       align: "center",
-      render: ({ pendingRetentionLoans }) => pendingRetentionLoans,
+      render: ({ pendingRetentionLoans, retentionChargedLoans }) => {
+        if (pendingRetentionLoans > 0) return <Chip size="sm" variant="soft" className="bg-warning/10 text-warning">Pendiente ({pendingRetentionLoans})</Chip>;
+        if (retentionChargedLoans > 0) return <Chip size="sm" variant="soft" className="bg-success/10 text-success">Cobrada ({retentionChargedLoans})</Chip>;
+        return <Chip size="sm" variant="soft" className="bg-muted text-muted-foreground">No cobrada</Chip>;
+      },
     },
     {
       key: "totalLoaned",
@@ -446,7 +483,7 @@ export function Loans() {
       header: "Estado",
       width: "10%",
       align: "center",
-      render: ({ totalLoans, activeLoans, pendingRetentionLoans, paidLoans }) => {
+      render: ({ totalLoans, activeLoans, pendingRetentionLoans }) => {
         if (totalLoans === 0) return <Chip size="sm" variant="soft" className="bg-muted text-muted-foreground">Sin préstamos</Chip>;
         if (pendingRetentionLoans > 0) return <Chip size="sm" variant="soft" className="bg-warning/10 text-warning">Pendiente</Chip>;
         if (activeLoans > 0) return <Chip size="sm" variant="soft" className="bg-primary/10 text-primary">Activo</Chip>;
@@ -593,11 +630,11 @@ export function Loans() {
                 </div>
               )}
 
-              {paidLoans.length > 0 && (
+              {closedLoans.length > 0 && (
                 <div>
-                  <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">Pagados</h3>
+                  <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">Pagados y cerrados</h3>
                   <DataTable
-                    data={paidLoans}
+                    data={closedLoans}
                     columns={loanColumns}
                     keyExtractor={(loan) => loan.id}
                     onRowClick={handleSelectLoan}
@@ -611,28 +648,30 @@ export function Loans() {
       )}
 
       {/* Vista: Detalle del Préstamo */}
-      {viewMode === 'loan-detail' && selectedLoan && amortizationSchedule && (
+      {viewMode === 'loan-detail' && selectedLoan && (
         <div className="space-y-6">
-          {/* Alerta de retención pendiente */}
+          {/* Alerta de retención pendiente (préstamos creados antes de que fuera opcional) */}
           {selectedLoan.status === 'pending_retention' && (
             <div className="bg-warning/10 border border-warning/30 rounded-[var(--radius)] p-4">
               <div className="flex items-start gap-4">
                 <Calculator className="w-5 h-5 text-warning shrink-0" />
                 <div className="flex-1">
                   <h3 className="font-semibold text-warning mb-1">
-                    Retención por Suministros Pendiente
+                    Retención por suministros pendiente
                   </h3>
                   <p className="text-sm text-warning mb-3">
-                    Se debe cobrar {formatCurrency(selectedLoan.retentionAmount, config.currencyCode)} ({formatPercentage(config.retentionRate)}) antes de desembolsar el préstamo.
+                    La retención es opcional. Puede cobrar {formatCurrency(selectedLoan.retentionAmount, config.currencyCode)} o dejar el préstamo sin retención.
                   </p>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onPress={() => payRetention(selectedLoan.id)}
-                  >
-                    <DollarSign className="w-4 h-4 mr-2" />
-                    Registrar Pago de Retención
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="primary" size="sm" onPress={() => payRetention(selectedLoan.id)}>
+                      <DollarSign className="w-4 h-4 mr-2" />
+                      Cobrar retención
+                    </Button>
+                    <Button variant="secondary" size="sm" onPress={() => waiveRetention(selectedLoan.id)}>
+                      <Ban className="w-4 h-4 mr-2" />
+                      No cobrar retención
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -647,16 +686,44 @@ export function Loans() {
                   <p className="text-xl font-bold text-foreground">{formatCurrency(selectedLoan.amount, config.currencyCode)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Cuota Mensual</p>
+                  <p className="text-sm text-muted-foreground">Cuota mensual</p>
                   <p className="text-xl font-bold text-foreground">{formatCurrency(selectedLoan.monthlyPayment, config.currencyCode)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Tasa Mensual</p>
-                  <p className="text-xl font-bold text-foreground">{formatPercentage(selectedLoan.monthlyInterestRate)}</p>
+                  <p className="text-sm text-muted-foreground">Total a cobrar</p>
+                  <p className="text-xl font-bold text-foreground">{formatCurrency(selectedLoan.totalAmount, config.currencyCode)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Saldo Pendiente</p>
-                  <p className="text-xl font-bold text-destructive">{formatCurrency(selectedLoan.remainingPrincipal, config.currencyCode)}</p>
+                  <p className="text-sm text-muted-foreground">Saldo pendiente</p>
+                  <p className={"text-xl font-bold " + (selectedLoan.remainingPrincipal > 0.005 ? "text-destructive" : "text-success")}>
+                    {formatCurrency(selectedLoan.remainingPrincipal, config.currencyCode)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Tasa mensual</p>
+                  <p className="font-semibold text-foreground">{formatPercentage(selectedLoan.monthlyInterestRate)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Interés total</p>
+                  <p className="font-semibold text-foreground">{formatCurrency(selectedLoan.totalInterest, config.currencyCode)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Transferencia</p>
+                  <p className="font-semibold text-foreground">{formatCurrency(scheduleTotals.transferFee, config.currencyCode)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Retención</p>
+                  {(() => {
+                    const badge = getRetentionBadge(selectedLoan);
+                    return (
+                      <div className="flex items-center gap-2">
+                        <Chip size="sm" variant="soft" className={badge.className}>{badge.label}</Chip>
+                        {selectedLoan.retentionAmount > 0 && (
+                          <span className="text-sm text-muted-foreground">{formatCurrency(selectedLoan.retentionAmount, config.currencyCode)}</span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -690,48 +757,25 @@ export function Loans() {
               </div>
 
               {/* Actions */}
-              {selectedLoan.remainingPrincipal > 0.01 && (
-                <div className="flex gap-3 mt-6 pt-6 border-t border-border">
-                  <Button
-                    onPress={() => setShowPayment(true)}
-                    isDisabled={selectedLoan.status === 'pending_retention'}
-                    className={selectedLoan.status === 'pending_retention' ? 'opacity-50 cursor-not-allowed' : ''}
-                  >
-                    <DollarSign className="w-4 h-4 mr-2" />
-                    Registrar Pago
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onPress={() => setShowRefinance(true)}
-                    isDisabled={selectedLoan.status === 'pending_retention'}
-                    className={selectedLoan.status === 'pending_retention' ? 'opacity-50 cursor-not-allowed' : ''}
-                  >
+              <div className="flex flex-wrap gap-3 mt-6 pt-6 border-t border-border">
+                <Button
+                  onPress={() => nextPendingInstallment && handleOpenPayment(nextPendingInstallment.installmentNumber)}
+                  isDisabled={!nextPendingInstallment || !isLoanOpen(selectedLoan)}
+                >
+                  <DollarSign className="w-4 h-4 mr-2" />
+                  {nextPendingInstallment ? `Registrar pago (cuota ${nextPendingInstallment.installmentNumber})` : 'Préstamo pagado'}
+                </Button>
+                {selectedLoan.status === 'active' && (
+                  <Button variant="secondary" onPress={() => setShowRefinance(true)}>
                     <RefreshCw className="w-4 h-4 mr-2" />
                     Refinanciar
                   </Button>
-                  {selectedLoan.paidInstallments > 0 && (
-                    <Button
-                      variant="danger"
-                      onPress={() => handleAnnulPayment(selectedLoan)}
-                    >
-                      <Undo2 className="w-4 h-4 mr-2" />
-                      Anular último pago
-                    </Button>
-                  )}
-                </div>
-              )}
-              {/* If fully paid, still allow annulling */}
-              {selectedLoan.remainingPrincipal <= 0.01 && selectedLoan.paidInstallments > 0 && (
-                <div className="flex gap-3 mt-6 pt-6 border-t border-border">
-                  <Button
-                    variant="danger"
-                    onPress={() => handleAnnulPayment(selectedLoan)}
-                  >
-                    <Undo2 className="w-4 h-4 mr-2" />
-                    Anular último pago
-                  </Button>
-                </div>
-              )}
+                )}
+                <Button variant="secondary" onPress={() => handleOpenEdit(selectedLoan)}>
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Editar
+                </Button>
+              </div>
             </Card.Content>
           </Card>
 
@@ -746,56 +790,92 @@ export function Loans() {
                   <Table.Content aria-label="Tabla de Amortización">
                     <Table.Header className={tableStyles.header}>
                       <Table.Column id="installment" isRowHeader className={tableStyles.column}>#</Table.Column>
-                      <Table.Column id="fecha" className={tableStyles.column}>Fecha</Table.Column>
+                      <Table.Column id="fecha" className={tableStyles.column}>Vence</Table.Column>
                       <Table.Column id="capital" className={tableStyles.column + " text-right"}>Capital</Table.Column>
                       <Table.Column id="inter-s" className={tableStyles.column + " text-right"}>Interés</Table.Column>
                       <Table.Column id="transfer" className={tableStyles.column + " text-right"}>Transfer.</Table.Column>
                       <Table.Column id="total-cuota" className={tableStyles.column + " text-right"}>Total Cuota</Table.Column>
                       <Table.Column id="saldo" className={tableStyles.column + " text-right"}>Saldo</Table.Column>
                       <Table.Column id="estado" className={tableStyles.column + " text-center"}>Estado</Table.Column>
-                  </Table.Header>
-                  <Table.Body>
-                    {amortizationSchedule.schedule.map((entry) => {
-                      const isPaid = entry.installmentNumber <= selectedLoan.paidInstallments;
-                      const hadPenalty = isPaid && selectedLoan.lastPaymentPenalty && selectedLoan.lastPaymentPenalty > 0 && entry.installmentNumber === selectedLoan.paidInstallments;
-                      return (
-                        <Table.Row
-                          key={entry.installmentNumber}
-                          id={String(entry.installmentNumber)}
-                          className={tableStyles.row + (isPaid ? " [&_.table__cell]:bg-muted/50" : "")}
-                        >
-                          <Table.Cell className={tableStyles.cell + " font-medium"}>{entry.installmentNumber}</Table.Cell>
-                          <Table.Cell className={tableStyles.cell}>{formatDate(entry.dueDate)}</Table.Cell>
-                          <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.principal, config.currencyCode)}</Table.Cell>
-                          <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.interest, config.currencyCode)}</Table.Cell>
-                          <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.transferFee, config.currencyCode)}</Table.Cell>
-                          <Table.Cell className={tableStyles.cell + " text-right font-medium"}>{formatCurrency(entry.payment, config.currencyCode)}</Table.Cell>
-                          <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.balance, config.currencyCode)}</Table.Cell>
-                          <Table.Cell className={tableStyles.cell + " text-center"}>
-                            {isPaid ? (
-                              <Chip
-                                size="sm"
-                                variant="soft"
-                                className={
-                                  hadPenalty
-                                    ? 'bg-destructive/10 text-destructive'
-                                    : 'bg-success/10 text-success'
-                                }
-                              >
-                                Pagado
-                              </Chip>
-                            ) : (
-                              <Chip size="sm" variant="soft" className="bg-warning/10 text-warning">
-                                Pendiente
-                              </Chip>
-                            )}
-                          </Table.Cell>
-                        </Table.Row>
-                      );
-                    })}
-                      </Table.Body>
-                    </Table.Content>
-                  </Table.ScrollContainer>
+                      <Table.Column id="acciones" className={tableStyles.column + " text-center"}>Acciones</Table.Column>
+                    </Table.Header>
+                    <Table.Body>
+                      {[
+                        ...loanSchedule.map((entry) => {
+                          const isPaid = isInstallmentPaid(entry);
+                          return (
+                            <Table.Row
+                              key={entry.installmentNumber}
+                              id={String(entry.installmentNumber)}
+                              className={tableStyles.row + (isPaid ? " [&>td]:!bg-success/10 even:[&>td]:!bg-success/10" : "")}
+                            >
+                              <Table.Cell className={tableStyles.cell + " font-medium"}>{entry.installmentNumber}</Table.Cell>
+                              <Table.Cell className={tableStyles.cell}>{formatDate(entry.dueDate)}</Table.Cell>
+                              <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.principal, config.currencyCode)}</Table.Cell>
+                              <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.interest, config.currencyCode)}</Table.Cell>
+                              <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.transferFee || 0, config.currencyCode)}</Table.Cell>
+                              <Table.Cell className={tableStyles.cell + " text-right font-medium"}>{formatCurrency(entry.payment, config.currencyCode)}</Table.Cell>
+                              <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(entry.balance, config.currencyCode)}</Table.Cell>
+                              <Table.Cell className={tableStyles.cell + " text-center"}>
+                                {isPaid ? (
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <Chip size="sm" variant="soft" className="bg-success/15 text-success">Pagado</Chip>
+                                    {(entry.paidDate || (entry.penaltyAmount ?? 0) > 0) && (
+                                      <span className="text-xs text-muted-foreground">
+                                        {entry.paidDate ? formatDate(entry.paidDate) : ''}
+                                        {(entry.penaltyAmount ?? 0) > 0 ? ` · multa ${formatCurrency(entry.penaltyAmount ?? 0, config.currencyCode)}` : ''}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <Chip size="sm" variant="soft" className="bg-warning/10 text-warning">Pendiente</Chip>
+                                )}
+                              </Table.Cell>
+                              <Table.Cell className={tableStyles.cell + " text-center"}>
+                                <div className="flex items-center justify-center gap-1">
+                                  {isPaid ? (
+                                    <>
+                                      <TableActionButton
+                                        label={`Editar pago de la cuota ${entry.installmentNumber}`}
+                                        icon={Pencil}
+                                        onPress={() => handleOpenEditPayment(entry)}
+                                      />
+                                      <TableActionButton
+                                        label={`Eliminar pago de la cuota ${entry.installmentNumber}`}
+                                        icon={Trash2}
+                                        tone="danger"
+                                        onPress={() => setPaymentToDelete(entry.installmentNumber)}
+                                      />
+                                    </>
+                                  ) : isLoanOpen(selectedLoan) ? (
+                                    <TableActionButton
+                                      label={`Registrar pago de la cuota ${entry.installmentNumber}`}
+                                      icon={DollarSign}
+                                      onPress={() => handleOpenPayment(entry.installmentNumber)}
+                                    />
+                                  ) : (
+                                    <span className="text-muted-foreground">—</span>
+                                  )}
+                                </div>
+                              </Table.Cell>
+                            </Table.Row>
+                          );
+                        }),
+                        <Table.Row key="totals" id="totals" className={tableStyles.row + " font-semibold [&>td]:!bg-muted even:[&>td]:!bg-muted"}>
+                          <Table.Cell className={tableStyles.cell}>Total</Table.Cell>
+                          <Table.Cell className={tableStyles.cell}>{''}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(scheduleTotals.principal, config.currencyCode)}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(scheduleTotals.interest, config.currencyCode)}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(scheduleTotals.transferFee, config.currencyCode)}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell + " text-right"}>{formatCurrency(scheduleTotals.payment, config.currencyCode)}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell}>{''}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell}>{''}</Table.Cell>
+                          <Table.Cell className={tableStyles.cell}>{''}</Table.Cell>
+                        </Table.Row>,
+                      ]}
+                    </Table.Body>
+                  </Table.Content>
+                </Table.ScrollContainer>
               </Table>
             </Card.Content>
           </Card>
@@ -805,16 +885,23 @@ export function Loans() {
       {/* Modal nuevo préstamo */}
       <FormModal
         isOpen={showForm}
-        onClose={() => setShowForm(false)}
+        onClose={handleCloseForm}
         onSubmit={handleSubmit}
-        title="Nuevo Préstamo"
-        submitText="Aprobar Préstamo"
+        title={editingLoan ? "Editar Préstamo" : "Nuevo Préstamo"}
+        submitText={editingLoan ? (editingLocked ? "Guardar notas" : "Guardar cambios") : "Aprobar Préstamo"}
         className="sm:max-w-6xl"
       >
         <div className="grid gap-6 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <div className="space-y-4">
+            {editingLocked && (
+              <div className="flex items-start gap-3 rounded-[var(--radius)] border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <p>Este préstamo tiene pagos registrados: sólo se pueden corregir las notas. Elimine los pagos para modificar los montos.</p>
+              </div>
+            )}
             <Select
               fullWidth
+              isDisabled={editingLocked}
               placeholder="Seleccionar socio..."
               selectedKey={formData.memberId || null}
               onSelectionChange={(key) => setFormData({ ...formData, memberId: String(key) })}
@@ -836,7 +923,7 @@ export function Loans() {
               </Select.Popover>
             </Select>
 
-            <TextField fullWidth type="number">
+            <TextField fullWidth type="number" isDisabled={editingLocked}>
               <Label>Monto <span className="text-destructive" aria-hidden="true">*</span></Label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -850,6 +937,7 @@ export function Loans() {
 
             <Select
               fullWidth
+              isDisabled={editingLocked}
               selectedKey={String(formData.monthlyInterestRate)}
               onSelectionChange={(key) => setFormData({ ...formData, monthlyInterestRate: parseFloat(String(key)) })}
             >
@@ -860,13 +948,14 @@ export function Loans() {
               </Select.Trigger>
               <Select.Popover>
                 <ListBox>
-                  <ListBox.Item id="1" textValue="1%">1%<ListBox.ItemIndicator /></ListBox.Item>
-                  <ListBox.Item id="2" textValue="2%">2%<ListBox.ItemIndicator /></ListBox.Item>
+                  {interestRateOptions.map((rate) => (
+                    <ListBox.Item key={rate} id={String(rate)} textValue={`${rate}%`}>{rate}%<ListBox.ItemIndicator /></ListBox.Item>
+                  ))}
                 </ListBox>
               </Select.Popover>
             </Select>
 
-            <TextField fullWidth type="number">
+            <TextField fullWidth type="number" isDisabled={editingLocked}>
               <Label>Plazo (meses)</Label>
               <Input
                 value={formData.termMonths || ''}
@@ -874,10 +963,31 @@ export function Loans() {
               />
             </TextField>
 
+            <TextField fullWidth type="number" isDisabled={editingLocked}>
+              <Label>Costo de transferencia</Label>
+              <div className="relative">
+                <DollarSign className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  step="0.01"
+                  min={0}
+                  value={formData.transferFee ?? ''}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setFormData({ ...formData, transferFee: value === '' ? 0 : Math.max(0, parseFloat(value) || 0) });
+                  }}
+                  className="pl-9"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Varía según el banco de destino. Se divide entre las {formData.termMonths || 0} cuotas.
+              </p>
+            </TextField>
+
             <DatePicker
               label="Fecha de inicio"
               value={formData.startDate}
               onChange={(value) => setFormData({ ...formData, startDate: value })}
+              isDisabled={editingLocked}
             />
 
             <TextField fullWidth>
@@ -889,9 +999,10 @@ export function Loans() {
             </TextField>
 
             <Checkbox
-              isSelected={formData.retentionPaid}
-              onChange={(checked) => setFormData({ ...formData, retentionPaid: checked })}
-              className="w-full rounded-[var(--radius)] border border-warning/30 bg-warning/10 p-3 transition-colors hover:bg-warning/15"
+              isSelected={formData.chargeRetention === true}
+              isDisabled={editingLocked}
+              onChange={(checked) => setFormData({ ...formData, chargeRetention: checked })}
+              className="w-full rounded-[var(--radius)] border border-border bg-muted/35 p-3 transition-colors hover:bg-muted/60"
             >
               <Checkbox.Content className="flex items-center gap-3">
                 <Checkbox.Control>
@@ -899,10 +1010,12 @@ export function Loans() {
                 </Checkbox.Control>
                 <div>
                   <span className="text-sm font-medium text-foreground">
-                    Confirmar pago de retención por suministros
+                    Cobrar retención por suministros (opcional)
                   </span>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Marque esta casilla si el socio ya pagó la retención de {formatCurrency(formData.amount * formData.monthlyInterestRate / 100, config.currencyCode)} ({formatPercentage(formData.monthlyInterestRate)} del monto del préstamo).
+                    {formData.chargeRetention
+                      ? `Se cobrará ${formatCurrency(formRetentionAmount, config.currencyCode)} (${formatPercentage(config.retentionRate)} del monto) al aprobar el préstamo.`
+                      : `No se cobra retención. Márquela para cobrar ${formatCurrency(formRetentionAmount, config.currencyCode)} (${formatPercentage(config.retentionRate)} del monto).`}
                   </p>
                 </div>
               </Checkbox.Content>
@@ -925,7 +1038,9 @@ export function Loans() {
                 <div className="grid grid-cols-2 gap-3 rounded-[var(--radius)] border border-border bg-background p-3 text-sm">
                   <div>
                     <p className="text-muted-foreground">Retención</p>
-                    <p className="font-semibold tabular-nums text-foreground">{formatCurrency(formData.amount * formData.monthlyInterestRate / 100, config.currencyCode)}</p>
+                    <p className="font-semibold tabular-nums text-foreground">
+                      {formData.chargeRetention ? formatCurrency(formRetentionAmount, config.currencyCode) : 'No se cobra'}
+                    </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">Cuota mensual</p>
@@ -938,12 +1053,12 @@ export function Loans() {
                   <div>
                     <p className="text-muted-foreground">Transferencias</p>
                     <p className="font-semibold tabular-nums text-foreground">{formatCurrency(simulatedLoan.totalTransferFees, config.currencyCode)}</p>
-                    <p className="text-xs text-muted-foreground">{formatCurrency(config.transferFee, config.currencyCode)} / cuota</p>
+                    <p className="text-xs text-muted-foreground">Fraccionada en {formData.termMonths} cuota(s)</p>
                   </div>
                   <div className="col-span-2 border-t border-border pt-3">
-                    <p className="text-muted-foreground">Total a pagar</p>
+                    <p className="text-muted-foreground">Total a cobrar (capital + interés + transferencia)</p>
                     <p className="text-lg font-semibold tabular-nums text-foreground">
-                      {formatCurrency(simulatedLoan.monthlyPayment * formData.termMonths, config.currencyCode)}
+                      {formatCurrency(simulatedLoan.totalAmount, config.currencyCode)}
                     </p>
                   </div>
                 </div>
@@ -1000,115 +1115,86 @@ export function Loans() {
 
       {/* Modal de pago */}
       <FormModal
-        isOpen={showPayment}
-        onClose={() => setShowPayment(false)}
-        onSubmit={handlePayment}
-        title="Registrar Pago"
-        submitText={selectedLoan && Math.abs(selectedLoan.remainingPrincipal) <= 0.01 ? "Finalizar Préstamo" : "Confirmar Pago"}
+        isOpen={paymentTarget !== null}
+        onClose={handleClosePayment}
+        onSubmit={handlePaymentSubmit}
+        title={paymentTarget?.mode === 'edit' ? `Editar pago - Cuota ${paymentTarget.installmentNumber}` : `Registrar pago - Cuota ${paymentTarget?.installmentNumber ?? ''}`}
+        submitText={paymentTarget?.mode === 'edit' ? "Guardar cambios" : "Confirmar pago"}
       >
-        {selectedLoan && (
-          <div className="space-y-4">
-            {/* Late payment warning */}
-            {(() => {
-              const today = new Date();
-              const currentDay = today.getDate();
-              const dueDay = config.loanPaymentDueDay ?? 18;
-              return currentDay >= dueDay && selectedLoan.remainingPrincipal > 0.01 ? (
-                <div className="p-4 rounded-[var(--radius)] border border-border bg-muted space-y-3">
+        {selectedLoan && paymentEntry && paymentTarget && (() => {
+          const currentPenalty = paymentTarget.mode === 'edit' && paymentEntry.penaltyAmount ? paymentEntry.penaltyAmount : penaltyValue;
+          const penalty = applyPenalty ? currentPenalty : 0;
+          const balanceAfter = paymentTarget.mode === 'edit'
+            ? selectedLoan.remainingPrincipal
+            : Math.max(0, selectedLoan.remainingPrincipal - paymentEntry.payment);
+          const paymentDay = paymentDate ? Number(paymentDate.split('-')[2]) : new Date().getDate();
+          const dueDay = config.loanPaymentDueDay ?? 18;
+
+          return (
+            <div className="space-y-4">
+              <div className="space-y-2 rounded-[var(--radius)] border border-border bg-muted p-4 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Capital</span>
+                  <span className="tabular-nums text-foreground">{formatCurrency(paymentEntry.principal, config.currencyCode)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Interés</span>
+                  <span className="tabular-nums text-foreground">{formatCurrency(paymentEntry.interest, config.currencyCode)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Transferencia</span>
+                  <span className="tabular-nums text-foreground">{formatCurrency(paymentEntry.transferFee || 0, config.currencyCode)}</span>
+                </div>
+                <div className="flex justify-between border-t border-border pt-2 font-semibold">
+                  <span className="text-foreground">Cuota</span>
+                  <span className="tabular-nums text-foreground">{formatCurrency(paymentEntry.payment, config.currencyCode)}</span>
+                </div>
+              </div>
+
+              <DatePicker
+                label="Fecha de pago"
+                value={paymentDate}
+                onChange={setPaymentDate}
+              />
+
+              <div className="space-y-2 rounded-[var(--radius)] border border-border bg-muted p-4">
+                {paymentDay >= dueDay && (
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
                     <p className="text-sm font-medium text-destructive">
-                      Pago tardío: Hoy es día {currentDay}. Día límite: {dueDay}.
+                      Pago tardío: día {paymentDay}. Día límite: {dueDay}.
                     </p>
                   </div>
-                  <Checkbox
-                    id="apply-penalty"
-                    isSelected={appliedLatePaymentPenalty}
-                    onChange={(checked) => setAppliedLatePaymentPenalty(checked)}
-                    className="pl-6"
-                  >
-                    <Checkbox.Content className="flex items-center gap-2">
-                      <Checkbox.Control className="h-4 w-4">
-                        <Checkbox.Indicator />
-                      </Checkbox.Control>
-                      <span className="text-sm text-foreground cursor-pointer font-normal">
-                        Aplicar multa de {formatCurrency(config.penaltyAmount, config.currencyCode)}
-                      </span>
-                    </Checkbox.Content>
-                  </Checkbox>
-                </div>
-              ) : null;
-            })()}
-            <div className="p-4 rounded-[var(--radius)] border border-border bg-muted">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Saldo pendiente</span>
-                <span className="font-bold text-foreground">{formatCurrency(selectedLoan.remainingPrincipal, config.currencyCode)}</span>
+                )}
+                <Checkbox
+                  id="apply-penalty"
+                  isSelected={applyPenalty}
+                  onChange={setApplyPenalty}
+                >
+                  <Checkbox.Content className="flex items-center gap-2">
+                    <Checkbox.Control className="h-4 w-4">
+                      <Checkbox.Indicator />
+                    </Checkbox.Control>
+                    <span className="text-sm text-foreground cursor-pointer font-normal">
+                      Aplicar multa de {formatCurrency(currentPenalty, config.currencyCode)}
+                    </span>
+                  </Checkbox.Content>
+                </Checkbox>
               </div>
-              <div className="flex justify-between mt-2">
-                <span className="text-muted-foreground">Cuota mensual</span>
-                <span className="font-medium text-foreground">{formatCurrency(selectedLoan.monthlyPayment, config.currencyCode)}</span>
+
+              <div className="space-y-1 rounded-[var(--radius)] border border-border bg-muted p-4 text-sm">
+                <div className="flex justify-between font-bold text-foreground">
+                  <span>Ingreso a caja</span>
+                  <span className="tabular-nums">{formatCurrency(paymentEntry.payment + penalty, config.currencyCode)}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Saldo pendiente {paymentTarget.mode === 'edit' ? 'actual' : 'después del pago'}</span>
+                  <span className="tabular-nums">{formatCurrency(balanceAfter, config.currencyCode)}</span>
+                </div>
               </div>
             </div>
-            {Math.abs(selectedLoan.remainingPrincipal) <= 0.01 ? (
-              <div className="p-4 rounded-[var(--radius)] border border-success/30 bg-success/10 text-sm text-success">
-                🎉 El préstamo está completamente pagado. Confirme para marcarlo como finalizado.
-              </div>
-            ) : selectedLoan.monthlyPayment > selectedLoan.remainingPrincipal ? (
-              <div className="p-3 rounded-[var(--radius)] border border-warning/30 bg-warning/10 text-sm text-warning">
-                La cuota mensual es mayor que el saldo pendiente. Se sugiere pagar {formatCurrency(selectedLoan.remainingPrincipal, config.currencyCode)} para cerrar el préstamo.
-              </div>
-            ) : null}
-            {Math.abs(selectedLoan.remainingPrincipal) > 0.01 && (
-              <div className="space-y-2">
-                <TextField fullWidth type="number">
-                <Label>Monto a pagar</Label>
-                <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    step="0.01"
-                    max={selectedLoan.remainingPrincipal}
-                    value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(e.target.value)}
-                    placeholder={`Sugerido: ${formatCurrency(Math.min(selectedLoan.remainingPrincipal, selectedLoan.monthlyPayment), config.currencyCode)} (máx: ${formatCurrency(selectedLoan.remainingPrincipal, config.currencyCode)})`}
-                    className="pl-9"
-                  />
-                </div>
-                </TextField>
-                {paymentAmount && (() => {
-                  const baseAmount = parseFloat(paymentAmount) || 0;
-                  const penaltyAmount = appliedLatePaymentPenalty ? (config.penaltyAmount ?? 5) : 0;
-                  const totalAmount = baseAmount + penaltyAmount;
-                  return penaltyAmount > 0 ? (
-                    <div className="mt-2 p-3 rounded-[var(--radius)] border border-border bg-muted text-sm">
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>Capital a pagar:</span>
-                        <span>{formatCurrency(baseAmount, config.currencyCode)}</span>
-                      </div>
-                      <div className="flex justify-between text-warning font-medium mt-1">
-                        <span>+ Multa:</span>
-                        <span>{formatCurrency(penaltyAmount, config.currencyCode)}</span>
-                      </div>
-                      <div className="border-t border-border mt-1 pt-1 flex justify-between font-bold text-foreground">
-                        <span>Total a pagar a Caja:</span>
-                        <span>{formatCurrency(totalAmount, config.currencyCode)}</span>
-                      </div>
-                    </div>
-                  ) : null;
-                })()}
-              </div>
-            )}
-            {Math.abs(selectedLoan.remainingPrincipal) <= 0.01 && (
-              <div className="p-3 rounded-[var(--radius)] border border-border bg-muted text-sm text-muted-foreground">
-                El préstamo ya está pagado. Haga clic en "Finalizar Préstamo" para completar el proceso.
-              </div>
-            )}
-            {Math.abs(selectedLoan.remainingPrincipal) > 0.01 && (
-              <div className="p-3 rounded-[var(--radius)] border border-border bg-muted text-sm text-muted-foreground">
-                El pago se aplicará directamente al capital pendiente. Máximo: <strong>{formatCurrency(selectedLoan.remainingPrincipal, config.currencyCode)}</strong>
-              </div>
-            )}
-          </div>
-        )}
+          );
+        })()}
       </FormModal>
 
       {/* Modal refinanciamiento */}
@@ -1119,8 +1205,8 @@ export function Loans() {
         loan={selectedLoan}
       />
 
-      {/* Delete Confirmation Modal */}
-      <AlertDialog isOpen={isDeleteModalOpen} onOpenChange={(open) => !open && setIsDeleteModalOpen(false)}>
+      {/* Confirmación de eliminación de préstamo */}
+      <AlertDialog isOpen={loanToDelete !== null} onOpenChange={(open) => { if (!open) setLoanToDelete(null); }}>
         <AlertDialog.Backdrop>
           <AlertDialog.Container className="sm:max-w-106.25">
             <AlertDialog.Dialog>
@@ -1133,13 +1219,16 @@ export function Loans() {
                     <AlertTriangle className="w-6 h-6" />
                   </AlertDialog.Icon>
                   <div>
-                    <p className="text-foreground font-medium">¿Estás seguro de eliminar este préstamo?</p>
-                    <p className="text-sm text-muted-foreground">Esta acción es irreversible y afectará los saldos contables.</p>
+                    <p className="text-foreground font-medium">¿Eliminar el préstamo de {loanToDelete?.memberName}?</p>
+                    <p className="text-sm text-muted-foreground">
+                      Se anulará el desembolso de {formatCurrency(loanToDelete?.amount ?? 0, config.currencyCode)}
+                      {loanToDelete?.retentionPaid && loanToDelete.retentionAmount > 0 ? ` y la retención de ${formatCurrency(loanToDelete.retentionAmount, config.currencyCode)}` : ''}, y la caja volverá a su valor anterior. Esta acción no se puede deshacer.
+                    </p>
                   </div>
                 </div>
               </AlertDialog.Body>
               <AlertDialog.Footer>
-                <Button variant="outline" onPress={() => setIsDeleteModalOpen(false)}>
+                <Button variant="outline" onPress={() => setLoanToDelete(null)}>
                   Cancelar
                 </Button>
                 <Button variant="danger" onPress={handleConfirmDelete}>
@@ -1151,33 +1240,33 @@ export function Loans() {
         </AlertDialog.Backdrop>
       </AlertDialog>
 
-      {/* Modal de confirmación de anulación de pago */}
-      <AlertDialog isOpen={isAnnulModalOpen} onOpenChange={(open) => { if (!open) { setIsAnnulModalOpen(false); setLoanToAnnul(null); } }}>
+      {/* Confirmación de eliminación de pago */}
+      <AlertDialog isOpen={paymentToDelete !== null} onOpenChange={(open) => { if (!open) setPaymentToDelete(null); }}>
         <AlertDialog.Backdrop>
           <AlertDialog.Container className="sm:max-w-106.25">
             <AlertDialog.Dialog>
               <AlertDialog.Header>
-                <AlertDialog.Heading>Anular último pago</AlertDialog.Heading>
+                <AlertDialog.Heading>Eliminar pago</AlertDialog.Heading>
               </AlertDialog.Header>
               <AlertDialog.Body className="space-y-4 py-4">
-                <div className="p-4 rounded-[var(--radius)] border border-border bg-muted">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
-                    <div>
-                      <p className="font-medium text-foreground">¿Anular el último pago?</p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        El préstamo volverá al estado anterior y la caja se ajustará automáticamente.
-                      </p>
-                    </div>
+                <div className="flex items-center gap-3">
+                  <AlertDialog.Icon status="danger">
+                    <AlertTriangle className="w-6 h-6" />
+                  </AlertDialog.Icon>
+                  <div>
+                    <p className="font-medium text-foreground">¿Eliminar el pago de la cuota {paymentToDelete}?</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      El monto se retirará de la caja, la cuota volverá a Pendiente y el saldo pendiente aumentará.
+                    </p>
                   </div>
                 </div>
               </AlertDialog.Body>
               <AlertDialog.Footer>
-                <Button variant="outline" onPress={() => { setIsAnnulModalOpen(false); setLoanToAnnul(null); }}>
+                <Button variant="outline" onPress={() => setPaymentToDelete(null)}>
                   Cancelar
                 </Button>
-                <Button variant="danger" onPress={handleConfirmAnnul}>
-                  Confirmar Anulación
+                <Button variant="danger" onPress={handleConfirmDeletePayment}>
+                  Eliminar pago
                 </Button>
               </AlertDialog.Footer>
             </AlertDialog.Dialog>

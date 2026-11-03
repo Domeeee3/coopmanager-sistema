@@ -1,4 +1,5 @@
 import React, { useMemo, useCallback } from 'react';
+import { getOpenLoans, isLoanOpen } from '@/core/lib/loans';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/core/store/AppContext';
 import { Alert, Button, Card, CardContent, CardHeader, CardTitle } from '@heroui/react';
@@ -43,7 +44,7 @@ export function Dashboard() {
   // Calcular estadísticas
   const stats = useMemo(() => {
     const activeMembers = (members || []).filter(m => m.status === 'active').length;
-    const activeLoans = (loans || []).filter(l => l.status === 'active').length;
+    const activeLoans = getOpenLoans(loans || []).length;
     const totalLoaned = (loans || []).reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
     const totalContributions = (contributions || []).filter(c => c.status === 'paid').reduce((sum, c) => sum + (Number(c.totalAmount) || 0), 0) - (refunds || []).reduce((sum, r) => sum + Number(r.amount || 0), 0);
     const totalInterest = (loans || []).reduce((sum, l) => sum + ((Number(l.totalInterest) || 0) * ((l.paidInstallments || 0) / (l.totalInstallments || 1))), 0);
@@ -60,7 +61,7 @@ export function Dashboard() {
     const loanPaymentDueDay = config?.loanPaymentDueDay ?? 18;
     const today = new Date();
     const lateLoans = (loans || []).filter(l => {
-      if (l.status !== 'active') return false;
+      if (!isLoanOpen(l)) return false;
       if (!l.schedule || l.schedule.length === 0) return false;
       return l.schedule.some(entry => {
         if (entry.status !== 'pending') return false;

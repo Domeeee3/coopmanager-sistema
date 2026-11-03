@@ -1,7 +1,7 @@
 import {
   Member, Loan, Contribution, Expense, Transaction,
   AppConfig, Toast, FontSizeSettings, ThemeSettings,
-  MemberFormData, LoanFormData, ContributionFormData, ExpenseFormData,
+  MemberFormData, LoanFormData, LoanPaymentData, ContributionFormData, ExpenseFormData,
   Refund, RefundFormData, ActivityLog, ActivityType
 } from '../types';
 import type { Workspace, WorkspaceIconName } from '../lib/workspaces';
@@ -30,6 +30,7 @@ export type Action =
   | { type: 'ADD_EXPENSE'; payload: Expense }
   | { type: 'SET_TRANSACTIONS'; payload: Transaction[] }
   | { type: 'ADD_TRANSACTION'; payload: Transaction }
+  | { type: 'UPDATE_TRANSACTION'; payload: Transaction }
   | { type: 'DELETE_TRANSACTION'; payload: string }
   | { type: 'SET_REFUNDS'; payload: Refund[] }
   | { type: 'ADD_REFUND'; payload: Refund }
@@ -137,12 +138,14 @@ export interface AppContextValue extends AppState {
   // Préstamos
   addLoan: (data: LoanFormData, options?: { notify?: boolean }) => Loan;
   updateLoan: (id: string, data: Partial<Loan>) => void;
+  editLoan: (id: string, data: LoanFormData) => void;
   getLoan: (id: string) => Loan | undefined;
   deleteLoan: (loanId: string) => void;
   payRetention: (loanId: string) => void;
-  payLoanInstallment: (loanId: string, installmentNumber: number) => void;
-  prepayLoan: (loanId: string, amount: number, includePenalty?: boolean) => void;
-  deleteLoanPayment: (loanId: string) => void;
+  waiveRetention: (loanId: string) => void;
+  payLoanInstallment: (loanId: string, installmentNumber: number, payment: LoanPaymentData) => void;
+  updateLoanPayment: (loanId: string, installmentNumber: number, payment: LoanPaymentData) => void;
+  deleteLoanPayment: (loanId: string, installmentNumber: number) => void;
   refinanceLoan: (loanId: string, newTermMonths: number) => Loan;
 
   // Aportes
@@ -162,7 +165,7 @@ export interface AppContextValue extends AppState {
   deleteRefund: (id: string) => void;
 
   // Transacciones
-  addTransaction: (type: Transaction['type'], amount: number, description: string, referenceId?: string) => void;
+  addTransaction: (type: Transaction['type'], amount: number, description: string, referenceId?: string, date?: string) => string;
   setCashbox: (value: number) => void;
   adjustCashbox: (amount: number, description?: string) => void;
 
@@ -186,5 +189,5 @@ export interface ActionHelpers {
   getState: () => AppState;
   showToast: (type: Toast['type'], title: string, message?: string) => void;
   logActivity: (type: ActivityType, description: string, details?: any, referenceId?: string) => void;
-  addTransaction: (type: Transaction['type'], amount: number, description: string, referenceId?: string) => void;
+  addTransaction: (type: Transaction['type'], amount: number, description: string, referenceId?: string, date?: string) => string;
 }

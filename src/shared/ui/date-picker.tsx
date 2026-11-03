@@ -9,6 +9,7 @@ interface DatePickerProps {
   onChange: (value: string) => void;
   label?: string;
   className?: string;
+  isDisabled?: boolean;
 }
 
 function toDateValue(value: string): DateValue | null {
@@ -21,10 +22,11 @@ function toDateValue(value: string): DateValue | null {
   }
 }
 
-export function DatePicker({ value, onChange, label = 'Fecha', className }: DatePickerProps) {
+export function DatePicker({ value, onChange, label = 'Fecha', className, isDisabled }: DatePickerProps) {
   return (
     <HeroDatePicker
       className={cn('w-full', className)}
+      isDisabled={isDisabled}
       value={toDateValue(value)}
       onChange={(date) => onChange(date?.toString() ?? '')}
     >

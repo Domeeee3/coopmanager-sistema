@@ -5,17 +5,18 @@ import { ActionHelpers, AppState } from '../types';
 export function createTransactionActions(helpers: Pick<ActionHelpers, 'dispatch' | 'getState' | 'showToast' | 'logActivity'>) {
   const { dispatch, getState, showToast, logActivity } = helpers;
 
-  const addTransaction = (type: Transaction['type'], amount: number, description: string, referenceId?: string) => {
+  const addTransaction = (type: Transaction['type'], amount: number, description: string, referenceId?: string, date?: string): string => {
     const transaction: Transaction = {
       id: uuidv4(),
       type,
       amount,
       description,
       referenceId,
-      date: new Date().toISOString().split('T')[0],
+      date: date || new Date().toISOString().split('T')[0],
       createdAt: new Date().toISOString(),
     };
     dispatch({ type: 'ADD_TRANSACTION', payload: transaction });
+    return transaction.id;
   };
 
   const setCashbox = (value: number) => {
