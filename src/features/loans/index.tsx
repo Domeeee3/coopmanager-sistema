@@ -11,7 +11,7 @@ import { MemberAvatar } from '@/shared/components/MemberAvatar';
 import { TableActionButton } from '@/shared/components/TableActionButton';
 import { RowActionsMenu } from '@/shared/components/RowActionsMenu';
 import { formatCurrency, formatDate, formatPercentage } from '@/core/lib/formatters';
-import { canEditLoanTerms, getLoanSchedule, getOpenLoans, getOutstandingBalance, isInstallmentPaid, isLoanOpen, loanHasPayments } from '@/core/lib/loans';
+import { canEditLoanTerms, getInstallmentCharge, getLoanSchedule, getOpenLoans, getOutstandingBalance, isInstallmentPaid, isLoanOpen, loanHasPayments } from '@/core/lib/loans';
 import { AmortizationEntry, Loan, LoanFormData, Member } from '@/core/types';
 import { calculateFrenchAmortization } from '@/core/hooks/useFinance';
 import {
@@ -1129,9 +1129,10 @@ export function Loans() {
         {selectedLoan && paymentEntry && paymentTarget && (() => {
           const currentPenalty = paymentTarget.mode === 'edit' && paymentEntry.penaltyAmount ? paymentEntry.penaltyAmount : penaltyValue;
           const penalty = applyPenalty ? currentPenalty : 0;
+          const charge = getInstallmentCharge(selectedLoan, paymentEntry);
           const balanceAfter = paymentTarget.mode === 'edit'
             ? selectedLoan.remainingPrincipal
-            : Math.max(0, selectedLoan.remainingPrincipal - paymentEntry.payment);
+            : Math.max(0, selectedLoan.remainingPrincipal - charge);
           const paymentDay = paymentDate ? Number(paymentDate.split('-')[2]) : new Date().getDate();
           const dueDay = config.loanPaymentDueDay ?? 18;
 
@@ -1154,6 +1155,12 @@ export function Loans() {
                   <span className="text-foreground">Cuota</span>
                   <span className="tabular-nums text-foreground">{formatCurrency(paymentEntry.payment, config.currencyCode)}</span>
                 </div>
+                {charge < paymentEntry.payment && (
+                  <div className="flex justify-between text-success">
+                    <span>Cubierto por abonos anteriores</span>
+                    <span className="tabular-nums">-{formatCurrency(paymentEntry.payment - charge, config.currencyCode)}</span>
+                  </div>
+                )}
               </div>
 
               <DatePicker
@@ -1190,7 +1197,7 @@ export function Loans() {
               <div className="space-y-1 rounded-[var(--radius)] border border-border bg-muted p-4 text-sm">
                 <div className="flex justify-between font-bold text-foreground">
                   <span>Ingreso a caja</span>
-                  <span className="tabular-nums">{formatCurrency(paymentEntry.payment + penalty, config.currencyCode)}</span>
+                  <span className="tabular-nums">{formatCurrency(charge + penalty, config.currencyCode)}</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>Saldo pendiente {paymentTarget.mode === 'edit' ? 'actual' : 'después del pago'}</span>

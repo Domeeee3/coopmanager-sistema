@@ -42,17 +42,19 @@ function addMonths(date, months) {
 }
 
 // Mirrors calculateFrenchAmortization in src/core/hooks/useFinance.ts:
-// capital, interest and the total transfer fee are split evenly across the
-// installments (cumulative rounding, so every column sums exactly).
-function splitEvenly(totalCents, parts) {
-  const rows = [];
-  let previous = 0;
-  for (let index = 1; index <= parts; index++) {
-    const cumulative = Math.round((totalCents * index) / parts);
-    rows.push(cumulative - previous);
-    previous = cumulative;
-  }
-  return rows;
+// capital and interest are split evenly with the leftover cents on the last
+// installment; the total transfer fee balances rows to keep the cuota fixed.
+function splitWithRemainderLast(totalCents, parts) {
+  const base = Math.floor(totalCents / parts);
+  return Array.from({ length: parts }, (_, index) => (index === parts - 1 ? totalCents - base * (parts - 1) : base));
+}
+
+function splitTransfer(transferCents, totalCents, principalRows, interestRows) {
+  const parts = principalRows.length;
+  const payment = Math.round(totalCents / parts);
+  const rows = principalRows.map((principal, index) => payment - principal - interestRows[index]);
+  rows[parts - 1] = transferCents - rows.slice(0, -1).reduce((sum, value) => sum + value, 0);
+  return rows.every(value => value >= 0) ? rows : splitWithRemainderLast(transferCents, parts);
 }
 
 function calculateSchedule(amount, monthlyInterestRate, termMonths, startDate, transferFee) {
@@ -61,9 +63,9 @@ function calculateSchedule(amount, monthlyInterestRate, termMonths, startDate, t
   const interestCents = Math.round(principalCents * monthlyInterestRate / 100 * termMonths);
   const transferCents = Math.round(transferFee * 100);
   const totalCents = principalCents + interestCents + transferCents;
-  const principalRows = splitEvenly(principalCents, termMonths);
-  const interestRows = splitEvenly(interestCents, termMonths);
-  const transferRows = splitEvenly(transferCents, termMonths);
+  const principalRows = splitWithRemainderLast(principalCents, termMonths);
+  const interestRows = splitWithRemainderLast(interestCents, termMonths);
+  const transferRows = splitTransfer(transferCents, totalCents, principalRows, interestRows);
   let remainingCents = totalCents;
 
   const schedule = Array.from({ length: termMonths }, (_, index) => {
@@ -85,7 +87,7 @@ function calculateSchedule(amount, monthlyInterestRate, termMonths, startDate, t
     retention,
     totalInterest: interestCents / 100,
     totalAmount: totalCents / 100,
-    monthlyPayment: Math.round(totalCents / termMonths) / 100,
+    monthlyPayment: schedule[0].payment,
     schedule,
   };
 }

@@ -144,6 +144,7 @@ export interface AmortizationEntry {
   paidDate?: string;
   penaltyAmount?: number;
   paymentTransactionId?: string;   // Transacción de caja que registró el pago
+  creditApplied?: number;          // Parte de la cuota cubierta por abonos antiguos (no entró a caja)
 }
 
 export interface AmortizationSchedule {

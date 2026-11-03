@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Loan, LoanFormData, LoanPaymentData, Transaction } from '../../types';
 import { ActionHelpers } from '../types';
 import { calculateFrenchAmortization } from '../../hooks/useFinance';
-import { applySchedule, canEditLoanTerms, getLoanSchedule, isInstallmentPaid, loanHasPayments } from '../../lib/loans';
+import { applySchedule, canEditLoanTerms, getInstallmentCharge, getLoanSchedule, isInstallmentPaid, loanHasPayments } from '../../lib/loans';
 import { formatCurrency } from '../../lib/formatters';
 
 const roundCents = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
@@ -227,21 +227,31 @@ export function createLoanActions(
     }
 
     const penalty = roundCents(Math.max(0, payment.penaltyAmount ?? 0));
+    // Préstamos antiguos con abonos libres: la cuota no cobra más que el saldo pendiente
+    const charge = getInstallmentCharge(loan, entry);
+    const creditApplied = roundCents(entry.payment - charge);
     const transactionId = addTransaction(
       'loan_payment',
-      roundCents(entry.payment + penalty),
-      paymentDescription(loan, installmentNumber, entry.payment, penalty),
+      roundCents(charge + penalty),
+      paymentDescription(loan, installmentNumber, charge, penalty),
       loanId,
       payment.paidDate,
     );
 
     const updatedSchedule = schedule.map(e => e.installmentNumber === installmentNumber
-      ? { ...e, status: 'paid' as const, paidDate: payment.paidDate, penaltyAmount: penalty, paymentTransactionId: transactionId }
+      ? {
+          ...e,
+          status: 'paid' as const,
+          paidDate: payment.paidDate,
+          penaltyAmount: penalty,
+          paymentTransactionId: transactionId,
+          ...(creditApplied > 0 ? { creditApplied } : {}),
+        }
       : e);
     const updatedLoan = applySchedule(loan, updatedSchedule);
     dispatch({ type: 'UPDATE_LOAN', payload: updatedLoan });
 
-    logActivity('loan_pay', `Cuota pagada: ${loan.memberName} - Cuota ${installmentNumber}/${loan.totalInstallments}`, { loanId, installmentNumber, amount: entry.payment, penalty }, loanId);
+    logActivity('loan_pay', `Cuota pagada: ${loan.memberName} - Cuota ${installmentNumber}/${loan.totalInstallments}`, { loanId, installmentNumber, amount: charge, creditApplied, penalty }, loanId);
     if (updatedLoan.status === 'paid') {
       showToast('success', 'Préstamo pagado', 'Todas las cuotas han sido canceladas.');
     } else {
@@ -280,9 +290,9 @@ export function createLoanActions(
         type: 'UPDATE_TRANSACTION',
         payload: {
           ...transaction,
-          amount: roundCents(entry.payment + penalty),
+          amount: roundCents(getInstallmentCharge(loan, entry) + penalty),
           date: payment.paidDate,
-          description: paymentDescription(loan, installmentNumber, entry.payment, penalty),
+          description: paymentDescription(loan, installmentNumber, getInstallmentCharge(loan, entry), penalty),
         },
       });
     } else if (transaction) {
@@ -326,13 +336,13 @@ export function createLoanActions(
       dispatch({ type: 'DELETE_TRANSACTION', payload: transaction.id });
     } else {
       // Sin movimiento identificable: se registra la salida equivalente para cuadrar caja
-      removedAmount = roundCents(entry.payment + (entry.penaltyAmount ?? 0));
+      removedAmount = roundCents(getInstallmentCharge(loan, entry) + (entry.penaltyAmount ?? 0));
       addTransaction('loan_payment', -removedAmount, `Anulación de pago cuota ${installmentNumber} - ${loan.memberName}`, loanId);
     }
 
     const updatedSchedule = schedule.map(e => {
       if (e.installmentNumber !== installmentNumber) return e;
-      const { paidDate: _paidDate, penaltyAmount: _penalty, paymentTransactionId: _transactionId, ...rest } = e;
+      const { paidDate: _paidDate, penaltyAmount: _penalty, paymentTransactionId: _transactionId, creditApplied: _credit, ...rest } = e;
       return { ...rest, status: 'pending' as const };
     });
     const updatedLoan = applySchedule(loan, updatedSchedule);

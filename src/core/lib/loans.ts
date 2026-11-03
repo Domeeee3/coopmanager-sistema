@@ -40,6 +40,15 @@ export function getLoanSchedule(loan: Loan): AmortizationEntry[] {
 const sumUnpaid = (schedule: AmortizationEntry[]) =>
   roundCents(schedule.filter((entry) => !isInstallmentPaid(entry)).reduce((sum, entry) => sum + entry.payment, 0));
 
+const sumCreditApplied = (schedule: AmortizationEntry[]) =>
+  roundCents(schedule.filter(isInstallmentPaid).reduce((sum, entry) => sum + (Number(entry.creditApplied) || 0), 0));
+
+/** Monto que entra a caja por una cuota: nunca más que el saldo pendiente. */
+export function getInstallmentCharge(loan: Loan, entry: AmortizationEntry): number {
+  if (isInstallmentPaid(entry)) return roundCents(entry.payment - (Number(entry.creditApplied) || 0));
+  return roundCents(Math.min(entry.payment, Math.max(0, Number(loan.remainingPrincipal) || 0)));
+}
+
 /**
  * Recalcula los totales derivados del préstamo a partir de su tabla.
  * Préstamos antiguos pudieron recibir abonos libres que sólo descontaban
@@ -47,8 +56,10 @@ const sumUnpaid = (schedule: AmortizationEntry[]) =>
  */
 export function applySchedule(loan: Loan, schedule: AmortizationEntry[]): Loan {
   const paidRows = schedule.filter(isInstallmentPaid);
-  const legacyOffset = roundCents(sumUnpaid(getLoanSchedule(loan)) - (Number(loan.remainingPrincipal) || 0));
-  const remaining = Math.max(0, roundCents(sumUnpaid(schedule) - legacyOffset));
+  // Crédito total por abonos antiguos = el aún no aplicado + el ya aplicado en cuotas pagadas
+  const previousSchedule = getLoanSchedule(loan);
+  const legacyCredit = roundCents(sumUnpaid(previousSchedule) - (Number(loan.remainingPrincipal) || 0) + sumCreditApplied(previousSchedule));
+  const remaining = Math.max(0, roundCents(sumUnpaid(schedule) - legacyCredit + sumCreditApplied(schedule)));
   const lastPaid = paidRows[paidRows.length - 1];
   const isFullyPaid = schedule.length > 0 && (paidRows.length === schedule.length || remaining <= 0.005);
   const collected = Math.max(0, roundCents((Number(loan.totalAmount) || 0) - remaining));

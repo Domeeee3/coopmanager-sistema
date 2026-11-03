@@ -27,30 +27,39 @@ const toCents = (value: number) => Math.round((Number(value) || 0) * 100);
 const fromCents = (cents: number) => cents / 100;
 
 /**
- * Reparte un total (en centavos) en `parts` filas de forma uniforme usando
- * redondeo acumulado: la suma de las filas es exactamente el total y ninguna
- * fila queda negativa.
+ * Reparte un total (en centavos) en partes iguales; los centavos sobrantes
+ * van en la última fila (ej. $100 en 3 → 33,33 / 33,33 / 33,34).
  */
-function splitEvenly(totalCents: number, parts: number): number[] {
-  const rows: number[] = [];
-  let previous = 0;
-  for (let index = 1; index <= parts; index++) {
-    const cumulative = Math.round((totalCents * index) / parts);
-    rows.push(cumulative - previous);
-    previous = cumulative;
-  }
-  return rows;
+function splitWithRemainderLast(totalCents: number, parts: number): number[] {
+  const base = Math.floor(totalCents / parts);
+  return Array.from({ length: parts }, (_, index) =>
+    index === parts - 1 ? totalCents - base * (parts - 1) : base,
+  );
+}
+
+/**
+ * Reparte la transferencia para que todas las cuotas (salvo la última, que
+ * ajusta los centavos) tengan el mismo valor. Si no es posible sin dejar
+ * filas negativas, la reparte en partes iguales con el sobrante en la última.
+ */
+function splitTransfer(transferCents: number, totalCents: number, principalRows: number[], interestRows: number[]): number[] {
+  const parts = principalRows.length;
+  const payment = Math.round(totalCents / parts);
+  const rows = principalRows.map((principal, index) => payment - principal - interestRows[index]);
+  rows[parts - 1] = transferCents - rows.slice(0, -1).reduce((sum, value) => sum + value, 0);
+  return rows.every((value) => value >= 0) ? rows : splitWithRemainderLast(transferCents, parts);
 }
 
 /**
  * Calcula la tabla de pagos de un préstamo.
  *
- * - Capital: el monto prestado se reparte en partes iguales entre las cuotas
- *   y la columna suma exactamente el monto.
+ * - Capital: el monto prestado se reparte en partes iguales entre las cuotas;
+ *   el centavo sobrante va en la última y la columna suma exactamente el monto.
  * - Interés: tasa mensual sobre el capital prestado por cada mes del plazo,
- *   repartido en partes iguales.
+ *   repartido en partes iguales (sobrante en la última cuota).
  * - Transferencia: `transferFee` es el costo TOTAL de la transferencia del
- *   préstamo y se fracciona entre las cuotas (no se cobra en cada pago).
+ *   préstamo y se fracciona entre las cuotas (no se cobra en cada pago),
+ *   ajustada para que la cuota mensual sea fija.
  * - La retención por suministros es opcional y no forma parte del total.
  *
  * Ejemplo: $100 a 3 meses al 1% con transferencia de $0,41 → total $103,41 y
@@ -69,9 +78,9 @@ export function calculateFrenchAmortization(
   const transferCents = Math.max(0, toCents(transferFee));
   const totalCents = principalCents + interestCents + transferCents;
 
-  const principalRows = splitEvenly(principalCents, months);
-  const interestRows = splitEvenly(interestCents, months);
-  const transferRows = splitEvenly(transferCents, months);
+  const principalRows = splitWithRemainderLast(principalCents, months);
+  const interestRows = splitWithRemainderLast(interestCents, months);
+  const transferRows = splitTransfer(transferCents, totalCents, principalRows, interestRows);
 
   const schedule: AmortizationEntry[] = [];
   const startDateObj = parseISO(startDate);
@@ -95,7 +104,8 @@ export function calculateFrenchAmortization(
   }
 
   return {
-    monthlyPayment: fromCents(Math.round(totalCents / months)),
+    // Cuota fija = valor de las cuotas (la última sólo ajusta centavos)
+    monthlyPayment: schedule[0].payment,
     totalInterest: fromCents(interestCents),
     totalTransferFees: fromCents(transferCents),
     totalAmount: fromCents(totalCents),
