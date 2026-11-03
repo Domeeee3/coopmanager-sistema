@@ -165,7 +165,7 @@ export function buildRefinancePlan(loan: Loan, newPendingInstallments: number): 
 
   const extra = extraInterest / 100;
   const endDate = slots[slots.length - 1].dueDate;
-  const updated = applySchedule(loan, withBalances);
+  const updated = applySchedule({ ...loan, totalAmount: roundCents(loan.totalAmount + extra) }, withBalances);
   const refinanced: Loan = {
     ...updated,
     termMonths: withBalances.length,
