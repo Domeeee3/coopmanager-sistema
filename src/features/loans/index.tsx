@@ -25,6 +25,7 @@ type LoanFilter = "all" | "active" | "pending_retention" | "paid";
 
 interface MemberLoanSummary {
   member: Member;
+  loans: Loan[];
   totalLoans: number;
   activeLoans: number;
   pendingRetentionLoans: number;
@@ -134,6 +135,7 @@ export function Loans() {
 
         return {
           member,
+          loans: memberLoans,
           totalLoans: memberLoans.length,
           activeLoans: openLoans.length,
           pendingRetentionLoans: memberLoans.filter((loan) => loan.status === "pending_retention").length,
@@ -487,6 +489,32 @@ export function Loans() {
         if (pendingRetentionLoans > 0) return <Chip size="sm" variant="soft" className="bg-warning/10 text-warning">Pendiente</Chip>;
         if (activeLoans > 0) return <Chip size="sm" variant="soft" className="bg-primary/10 text-primary">Activo</Chip>;
         return <Chip size="sm" variant="soft" className="bg-success/10 text-success">Pagado</Chip>;
+      },
+    },
+    {
+      key: "actions",
+      header: "",
+      width: "56px",
+      align: "center",
+      render: ({ member, loans: summaryLoans }) => {
+        const openLoans = summaryLoans.filter(isLoanOpen);
+        if (openLoans.length === 0) return null;
+        const describe = (loan: Loan) => openLoans.length > 1
+          ? ` de ${formatCurrency(loan.amount, config.currencyCode)} (${formatDate(loan.startDate)})`
+          : '';
+        return (
+          <RowActionsMenu
+            label={`Acciones de préstamos de ${member.name}`}
+            actions={openLoans.flatMap((loan) => {
+              const locked = !canEditLoanTerms(loan, transactions);
+              const suffix = locked ? ' (tiene pagos)' : '';
+              return [
+                { id: `edit-${loan.id}`, label: `Editar préstamo${describe(loan)}${suffix}`, icon: Pencil, isDisabled: locked, onAction: () => handleOpenEdit(loan) },
+                { id: `delete-${loan.id}`, label: `Eliminar préstamo${describe(loan)}${suffix}`, icon: Trash2, tone: "danger" as const, isDisabled: locked, onAction: () => setLoanToDelete(loan) },
+              ];
+            })}
+          />
+        );
       },
     },
   ];

@@ -1,6 +1,6 @@
 import { addMonths, format, parseISO } from 'date-fns';
 import type { AmortizationEntry, Loan, Transaction } from '../types';
-import { buildInstallmentRows } from '../hooks/useFinance';
+import { buildInstallmentRows, calculateFrenchAmortization } from '../hooks/useFinance';
 
 const roundCents = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
 
@@ -90,6 +90,50 @@ export function canEditLoanTerms(loan: Loan, transactions: Transaction[]): boole
 export function loanHasPayments(loan: Loan, transactions: Transaction[]): boolean {
   if (getLoanSchedule(loan).some(isInstallmentPaid) || loan.paidInstallments > 0) return true;
   return transactions.some((transaction) => transaction.type === 'loan_payment' && transaction.referenceId === loan.id);
+}
+
+/**
+ * Préstamos creados antes del cambio de fórmula: la cuota no es la suma de
+ * capital + interés + transferencia, o el total no coincide con las cuotas.
+ */
+export function hasLegacySchedule(loan: Loan): boolean {
+  const schedule = loan.schedule || [];
+  if (schedule.length === 0) return false;
+  const cents = (value: number) => Math.round((Number(value) || 0) * 100);
+  const rowsMismatch = schedule.some((entry) => cents(entry.principal) + cents(entry.interest) + cents(entry.transferFee || 0) !== cents(entry.payment));
+  const totalMismatch = schedule.reduce((sum, entry) => sum + cents(entry.payment), 0) !== cents(loan.totalAmount);
+  return rowsMismatch || totalMismatch;
+}
+
+/**
+ * Recalcula con la fórmula actual los préstamos antiguos vigentes que aún no
+ * tienen pagos (los que tienen pagos se conservan tal cual). La transferencia
+ * guardada pasa a ser el costo total fraccionado entre las cuotas.
+ * Devuelve el mismo arreglo si no hubo cambios.
+ */
+export function migrateLegacyLoans(loans: Loan[], transactions: Transaction[]): Loan[] {
+  let changed = false;
+  const migrated = loans.map((loan) => {
+    if (!OPEN_STATUSES.includes(loan.status) || !hasLegacySchedule(loan) || loanHasPayments(loan, transactions)) return loan;
+    const months = loan.termMonths || loan.schedule.length;
+    const calc = calculateFrenchAmortization(loan.amount, loan.monthlyInterestRate, months, loan.startDate, loan.transferFee);
+    changed = true;
+    return {
+      ...loan,
+      termMonths: months,
+      totalInstallments: months,
+      monthlyPayment: calc.monthlyPayment,
+      totalInterest: calc.totalInterest,
+      totalAmount: calc.totalAmount,
+      paidPrincipal: 0,
+      remainingPrincipal: calc.totalAmount,
+      paidInstallments: 0,
+      lastPaymentPenalty: 0,
+      endDate: calc.schedule[calc.schedule.length - 1].dueDate,
+      schedule: calc.schedule,
+    };
+  });
+  return changed ? migrated : loans;
 }
 
 export interface RefinancePlan {

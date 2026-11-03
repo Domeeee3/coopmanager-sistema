@@ -3,6 +3,7 @@ import {
   Member, Loan, Contribution, Expense, Transaction,
   AppConfig, FontSizeSettings, ThemeSettings, ActivityLog,
 } from '../types';
+import { migrateLegacyLoans } from '../lib/loans';
 import { getItem as storageGet, setItem as storageSet } from '../lib/storage';
 import {
   Workspace,
@@ -89,7 +90,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           fontSize: savedFontSize ?? initialFontSize,
           theme: savedTheme ?? initialTheme,
           members: savedMembers ?? [],
-          loans: savedLoans ?? [],
+          loans: migrateLegacyLoans(savedLoans ?? [], savedTransactions ?? []),
           contributions: savedContributions ?? [],
           expenses: savedExpenses ?? [],
           transactions: savedTransactions ?? [],

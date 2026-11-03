@@ -3,6 +3,7 @@ import { AppConfig, Toast, ActivityLog, ActivityType } from '../../types';
 import { createBackupWorkbook, createReportWorkbook, downloadWorkbook, exportWorkspacePhotos, readBackupWorkbook } from '../../lib/excel';
 import type { Workspace } from '../../lib/workspaces';
 import { ActionHelpers } from '../types';
+import { migrateLegacyLoans } from '../../lib/loans';
 
 export function createConfigActions(helpers: Pick<ActionHelpers, 'dispatch' | 'getState'>) {
   const { dispatch, getState } = helpers;
@@ -48,7 +49,7 @@ export function createDataActions(helpers: ActionHelpers, deps: { calculateAvail
       dispatch({ type: 'SET_FONT_SIZE', payload: data.fontSize.base });
       dispatch({ type: 'SET_THEME', payload: data.theme.mode });
       dispatch({ type: 'SET_MEMBERS', payload: data.members.map((member) => ({ ...member, profilePhoto: restoredPhotoNames.get(member.id) })) });
-      dispatch({ type: 'SET_LOANS', payload: data.loans });
+      dispatch({ type: 'SET_LOANS', payload: migrateLegacyLoans(data.loans, data.transactions) });
       dispatch({ type: 'SET_CONTRIBUTIONS', payload: data.contributions });
       dispatch({ type: 'SET_EXPENSES', payload: data.expenses });
       dispatch({ type: 'SET_TRANSACTIONS', payload: data.transactions });
