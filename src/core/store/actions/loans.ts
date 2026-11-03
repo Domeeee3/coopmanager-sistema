@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Loan, LoanFormData, LoanPaymentData, Transaction } from '../../types';
 import { ActionHelpers } from '../types';
 import { calculateFrenchAmortization } from '../../hooks/useFinance';
-import { applySchedule, getLoanSchedule, isInstallmentPaid, loanHasPayments } from '../../lib/loans';
+import { applySchedule, canEditLoanTerms, getLoanSchedule, isInstallmentPaid, loanHasPayments } from '../../lib/loans';
 import { formatCurrency } from '../../lib/formatters';
 
 const roundCents = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
@@ -107,10 +107,12 @@ export function createLoanActions(
     const loan = state.loans.find(l => l.id === id);
     if (!loan) return;
 
-    if (loanHasPayments(loan, state.transactions)) {
+    if (!canEditLoanTerms(loan, state.transactions)) {
       dispatch({ type: 'UPDATE_LOAN', payload: { ...loan, notes: data.notes } });
       logActivity('loan_edit', `Notas de préstamo actualizadas: ${loan.memberName}`, { loanId: id, notes: data.notes }, id);
-      showToast('info', 'Préstamo actualizado', 'El préstamo tiene pagos registrados: sólo se actualizaron las notas.');
+      showToast('info', 'Préstamo actualizado', loanHasPayments(loan, state.transactions)
+        ? 'El préstamo tiene pagos registrados: sólo se actualizaron las notas.'
+        : 'El préstamo está cerrado: sólo se actualizaron las notas.');
       return;
     }
 
@@ -168,10 +170,13 @@ export function createLoanActions(
     const linked = state.transactions.filter(t => t.referenceId === loanId);
     linked.forEach(transaction => dispatch({ type: 'DELETE_TRANSACTION', payload: transaction.id }));
 
-    // Préstamos antiguos guardaban la retención sin referencia al préstamo
-    const hasLinkedRetention = linked.some(t => t.type === 'retention');
-    if (loan.retentionPaid && !hasLinkedRetention && loan.retentionAmount > 0) {
-      addTransaction('retention', -Number(loan.retentionAmount), `Devolución de retención por anulación - ${loan.memberName}`);
+    // Préstamos antiguos guardaban la retención sin referencia al préstamo:
+    // se devuelve la parte cobrada que no está en movimientos enlazados.
+    const collectedRetention = loan.retentionPaid ? Number(loan.retentionAmount) || 0 : 0;
+    const linkedRetention = linked.filter(t => t.type === 'retention').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    const unlinkedRetention = roundCents(collectedRetention - linkedRetention);
+    if (unlinkedRetention !== 0) {
+      addTransaction('retention', -unlinkedRetention, `Devolución de retención por anulación - ${loan.memberName}`);
     }
 
     dispatch({ type: 'DELETE_LOAN', payload: loanId });
@@ -266,10 +271,11 @@ export function createLoanActions(
     if (!entry || !isInstallmentPaid(entry)) return;
 
     const penalty = roundCents(Math.max(0, payment.penaltyAmount ?? 0));
-    const transaction = entry.paymentTransactionId ? findPaymentTransaction(loan, entry.paymentTransactionId) : undefined;
+    const penaltyDifference = roundCents(penalty - (entry.penaltyAmount ?? 0));
+    const transaction = findPaymentTransaction(loan, entry.paymentTransactionId);
     let transactionId = entry.paymentTransactionId;
 
-    if (transaction) {
+    if (transaction && entry.paymentTransactionId) {
       dispatch({
         type: 'UPDATE_TRANSACTION',
         payload: {
@@ -279,12 +285,17 @@ export function createLoanActions(
           description: paymentDescription(loan, installmentNumber, entry.payment, penalty),
         },
       });
-    } else {
-      // Pago antiguo sin movimiento enlazado: sólo se ajusta la diferencia de multa
-      const difference = roundCents(penalty - (entry.penaltyAmount ?? 0));
-      if (difference !== 0) {
-        transactionId = addTransaction('loan_payment', difference, `Ajuste de multa cuota ${installmentNumber} - ${loan.memberName}`, loanId, payment.paidDate);
-      }
+    } else if (transaction) {
+      // Pago antiguo: se enlaza su movimiento original y sólo se ajusta la multa,
+      // así eliminar el pago después retira exactamente lo que entró a caja.
+      transactionId = transaction.id;
+      dispatch({
+        type: 'UPDATE_TRANSACTION',
+        payload: { ...transaction, amount: roundCents(Number(transaction.amount) + penaltyDifference), date: payment.paidDate },
+      });
+    } else if (penaltyDifference !== 0) {
+      // Sin movimiento identificable: se registra sólo la diferencia de multa
+      addTransaction('manual_adjustment', penaltyDifference, `Ajuste de multa cuota ${installmentNumber} - ${loan.memberName}`, loanId, payment.paidDate);
     }
 
     const updatedSchedule = schedule.map(e => e.installmentNumber === installmentNumber

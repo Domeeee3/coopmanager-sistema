@@ -11,7 +11,7 @@ import { MemberAvatar } from '@/shared/components/MemberAvatar';
 import { TableActionButton } from '@/shared/components/TableActionButton';
 import { RowActionsMenu } from '@/shared/components/RowActionsMenu';
 import { formatCurrency, formatDate, formatPercentage } from '@/core/lib/formatters';
-import { getLoanSchedule, getOpenLoans, getOutstandingBalance, isInstallmentPaid, isLoanOpen, loanHasPayments } from '@/core/lib/loans';
+import { canEditLoanTerms, getLoanSchedule, getOpenLoans, getOutstandingBalance, isInstallmentPaid, isLoanOpen, loanHasPayments } from '@/core/lib/loans';
 import { AmortizationEntry, Loan, LoanFormData, Member } from '@/core/types';
 import { calculateFrenchAmortization } from '@/core/hooks/useFinance';
 import {
@@ -257,7 +257,7 @@ export function Loans() {
     setEditingLoan(null);
   };
 
-  const editingLocked = editingLoan ? loanHasPayments(editingLoan, transactions) : false;
+  const editingLocked = editingLoan ? !canEditLoanTerms(editingLoan, transactions) : false;
 
   const handleSubmit = () => {
     if (editingLoan && editingLocked) {
@@ -896,7 +896,9 @@ export function Loans() {
             {editingLocked && (
               <div className="flex items-start gap-3 rounded-[var(--radius)] border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                <p>Este préstamo tiene pagos registrados: sólo se pueden corregir las notas. Elimine los pagos para modificar los montos.</p>
+                <p>{editingLoan && loanHasPayments(editingLoan, transactions)
+                  ? 'Este préstamo tiene pagos registrados: sólo se pueden corregir las notas. Elimine los pagos para modificar los montos.'
+                  : 'Este préstamo está cerrado: sólo se pueden corregir las notas.'}</p>
               </div>
             )}
             <Select
@@ -1012,6 +1014,9 @@ export function Loans() {
                   <span className="text-sm font-medium text-foreground">
                     Cobrar retención por suministros (opcional)
                   </span>
+                  {editingLoan?.status === 'pending_retention' && !editingLocked && (
+                    <p className="mt-1 text-xs text-warning">Este préstamo tiene la retención pendiente: si guarda sin marcar la casilla, la retención no se cobrará.</p>
+                  )}
                   <p className="mt-1 text-xs text-muted-foreground">
                     {formData.chargeRetention
                       ? `Se cobrará ${formatCurrency(formRetentionAmount, config.currencyCode)} (${formatPercentage(config.retentionRate)} del monto) al aprobar el préstamo.`

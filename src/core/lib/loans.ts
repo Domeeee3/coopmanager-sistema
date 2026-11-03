@@ -37,13 +37,21 @@ export function getLoanSchedule(loan: Loan): AmortizationEntry[] {
   );
 }
 
-/** Recalcula los totales derivados del préstamo a partir de su tabla. */
+const sumUnpaid = (schedule: AmortizationEntry[]) =>
+  roundCents(schedule.filter((entry) => !isInstallmentPaid(entry)).reduce((sum, entry) => sum + entry.payment, 0));
+
+/**
+ * Recalcula los totales derivados del préstamo a partir de su tabla.
+ * Préstamos antiguos pudieron recibir abonos libres que sólo descontaban
+ * `remainingPrincipal`: esa diferencia con las cuotas pendientes se conserva.
+ */
 export function applySchedule(loan: Loan, schedule: AmortizationEntry[]): Loan {
   const paidRows = schedule.filter(isInstallmentPaid);
-  const remaining = roundCents(schedule.filter((entry) => !isInstallmentPaid(entry)).reduce((sum, entry) => sum + entry.payment, 0));
-  const collected = roundCents(paidRows.reduce((sum, entry) => sum + entry.payment, 0));
+  const legacyOffset = roundCents(sumUnpaid(getLoanSchedule(loan)) - (Number(loan.remainingPrincipal) || 0));
+  const remaining = Math.max(0, roundCents(sumUnpaid(schedule) - legacyOffset));
   const lastPaid = paidRows[paidRows.length - 1];
-  const isFullyPaid = schedule.length > 0 && paidRows.length === schedule.length;
+  const isFullyPaid = schedule.length > 0 && (paidRows.length === schedule.length || remaining <= 0.005);
+  const collected = Math.max(0, roundCents((Number(loan.totalAmount) || 0) - remaining));
 
   let status = loan.status;
   if (isFullyPaid && OPEN_STATUSES.includes(status)) status = 'paid';
@@ -58,6 +66,11 @@ export function applySchedule(loan: Loan, schedule: AmortizationEntry[]): Loan {
     lastPaymentPenalty: lastPaid?.penaltyAmount ?? 0,
     status,
   };
+}
+
+/** Préstamos cerrados (pagados, refinanciados, cancelados) no admiten cambios de montos. */
+export function canEditLoanTerms(loan: Loan, transactions: Transaction[]): boolean {
+  return OPEN_STATUSES.includes(loan.status) && !loanHasPayments(loan, transactions);
 }
 
 /** Indica si el préstamo tiene pagos registrados (en su tabla o en caja). */
